@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zenith</title>
+  <style>
+    :root {
+      --bg: #1c1c1e;
+      --panel: #242426;
+      --panel2: #2c2c2e;
+      --border: #3a3a3c;
+      --border2: #48484a;
+      --text: #e5e5ea;
+      --muted: #8e8e93;
+      --dim: #48484a;
+      --accent: #0a84ff;
+      --good: #30d158;
+      --warn: #ffd60a;
+      --hi: #ffffff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ── Layout shell ── */
+    .shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Title bar ── */
+    .titlebar {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 5px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .titlebar-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--hi);
+      letter-spacing: 0.01em;
+    }
+    .titlebar-meta {
+      font-size: 11px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      background: var(--panel2);
+      border-bottom: 1px solid var(--border);
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .tf {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tf label {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .tf input {
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 3px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: "SF Mono", ui-monospace, monospace;
+      width: 80px;
+    }
+    .tf input[type="date"] { width: 128px; font-family: inherit; }
+    .tf input:focus { outline: 1px solid var(--accent); }
+    .tsep { width: 1px; height: 20px; background: var(--border2); margin: 0 2px; flex-shrink: 0; }
+    .tbtn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 4px 14px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      flex-shrink: 0;
+    }
+    .tbtn:disabled { opacity: 0.45; cursor: wait; }
+
+    /* ── Workspace ── */
+    .workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Table pane ── */
+    .table-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .col-head {
+      display: flex;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border2);
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .ch {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    /* column widths */
+    .c-name   { width: 190px; }
+    .c-kind   { width: 100px; }
+    .c-mag    { width: 52px;  text-align: right; }
+    .c-peak   { width: 60px;  text-align: right; }
+    .c-air    { width: 72px;  text-align: right; }
+    .c-win    { width: 150px; }
+    .c-trans  { width: 82px;  }
+    .c-moon   { width: 60px;  text-align: right; }
+    .c-score  { flex: 1;      text-align: right; min-width: 60px; }
+
+    .table-body {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .table-body::-webkit-scrollbar { width: 7px; }
+    .table-body::-webkit-scrollbar-track { background: var(--bg); }
+    .table-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+    .row {
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .row:hover  { background: var(--panel2); }
+    .row.sel    { background: #0a3060; }
+    .row.sel:hover { background: #0c3870; }
+
+    .cd {
+      padding: 4px 8px;
+      font-size: 12px;
+      font-family: "SF Mono", ui-monospace, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+      color: var(--text);
+    }
+    .cd.c-name  { font-family: inherit; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+    .rn-primary { font-size: 12px; font-weight: 500; color: var(--hi); }
+    .rn-common  { font-size: 11px; color: var(--muted); }
+
+    .kind-pill {
+      display: inline-block;
+      font-size: 10px;
+      font-family: inherit;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    .kp-glob { background: #0c2d4a; color: #5ac8fa; }
+    .kp-neb  { background: #0d3020; color: #30d158; }
+    .kp-open { background: #3a2800; color: #ffd60a; }
+    .kp-gal  { background: #2a1040; color: #bf5af2; }
+    .kp-snr  { background: #3a0c0c; color: #ff6961; }
+    .kp-def  { background: var(--panel2); color: var(--muted); }
+
+    .score-val { color: var(--good); font-weight: 600; }
+
+    /* ── Detail pane ── */
+    .detail-pane {
+      width: 230px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border);
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .dp-head {
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+    }
+    .dp-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+    .dp-body::-webkit-scrollbar { width: 5px; }
+    .dp-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    .dp-name    { font-size: 14px; font-weight: 600; color: var(--hi); margin-bottom: 1px; }
+    .dp-common  { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .dp-why {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.5;
+      margin-bottom: 10px;
+      padding: 7px 8px;
+      background: var(--bg);
+      border-left: 2px solid var(--accent);
+      border-radius: 0 3px 3px 0;
+    }
+    .dp-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+    .kv { width: 100%; border-collapse: collapse; }
+    .kv td { padding: 3px 0; vertical-align: top; }
+    .kv td:first-child { font-size: 11px; color: var(--muted); width: 72px; padding-right: 4px; }
+    .kv td:last-child  { font-size: 12px; font-family: "SF Mono", ui-monospace, monospace; color: var(--text); }
+    .dp-empty { font-size: 12px; color: var(--dim); text-align: center; margin-top: 24px; }
+
+    /* ── Status bar ── */
+    .statusbar {
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 3px 10px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: "SF Mono", ui-monospace, monospace;
+      flex-shrink: 0;
+    }
+    .sb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); flex-shrink: 0; }
+    .sb-dot.off { background: var(--dim); }
+    .sb-val { color: var(--text); }
+
+    /* ── States ── */
+    .state-box {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .err-bar {
+      margin: 12px;
+      padding: 8px 12px;
+      background: #3a0c0c;
+      border: 1px solid #6a1a1a;
+      border-radius: 5px;
+      color: #ff9f9f;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Title bar -->
+  <div class="titlebar">
+    <div class="titlebar-name">Zenith</div>
+    <div class="titlebar-meta" id="titlemeta">No plan loaded</div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="tf"><label>Lat</label><input id="lat" type="number" step="0.01" value="37.87" style="width:72px"/></div>
+    <div class="tf"><label>Lon</label><input id="lon" type="number" step="0.01" value="-122.27" style="width:80px"/></div>
+    <div class="tsep"></div>
+    <div class="tf"><label>Aperture (mm)</label><input id="aperture" type="number" step="10" value="150" style="width:58px"/></div>
+    <div class="tf"><label>Duration (hr)</label><input id="duration" type="number" step="0.5" value="4" style="width:46px"/></div>
+    <div class="tf"><label>Min alt (°)</label><input id="minalt" type="number" step="1" value="25" style="width:44px"/></div>
+    <div class="tsep"></div>
+    <div class="tf"><label>Date</label><input id="date" type="date"/></div>
+    <div class="tsep"></div>
+    <button class="tbtn" id="go">Plan Night</button>
+  </div>
+
+  <!-- Workspace -->
+  <div class="workspace">
+
+    <!-- Table pane -->
+    <div class="table-pane">
+      <div class="col-head">
+        <div class="ch c-name">Object</div>
+        <div class="ch c-kind">Type</div>
+        <div class="ch c-mag" style="text-align:right">Mag</div>
+        <div class="ch c-peak" style="text-align:right">Peak</div>
+        <div class="ch c-air" style="text-align:right">Airmass</div>
+        <div class="ch c-win">Window</div>
+        <div class="ch c-trans">Transit</div>
+        <div class="ch c-moon" style="text-align:right">Moon</div>
+        <div class="ch c-score" style="text-align:right">Score</div>
+      </div>
+      <div class="table-body" id="tbody">
+        <div class="state-box">Configure parameters above, then click Plan Night.</div>
+      </div>
+    </div>
+
+    <!-- Detail pane -->
+    <div class="detail-pane">
+      <div class="dp-head">Object Properties</div>
+      <div class="dp-body" id="dpbody">
+        <div class="dp-empty">Select a target</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <div class="sb-dot off" id="sbdot"></div>
+    <span id="sbstatus">Ready</span>
+    <span>Targets: <span class="sb-val" id="sb-count">—</span></span>
+    <span>Moon: <span class="sb-val" id="sb-moon">—</span></span>
+    <span>Lat/Lon: <span class="sb-val" id="sb-loc">—</span></span>
+  </div>
+
+</div>
+
+<script>
+  const SYSTEM = `You are an astronomy observation planner API. Return ONLY a valid JSON object — no markdown, no explanation.
+
+Shape:
+{
+  "moon_illumination": 0.0,
+  "count": 10,
+  "targets": [
+    {
+      "name": "M42",
+      "common_name": "Orion Nebula",
+      "kind": "Nebula",
+      "magnitude": 4.0,
+      "max_alt_deg": 55,
+      "min_airmass": 1.22,
+      "score": 0.85,
+      "why": "One concise sentence explaining why this scores well tonight.",
+      "window_start": "2024-01-15T21:30:00Z",
+      "window_end": "2024-01-16T01:15:00Z",
+      "transit_time": "2024-01-15T23:22:00Z",
+      "moon_sep_deg": 87
+    }
+  ]
+}
+
+Include 8-14 varied deep-sky objects appropriate for the season and location. Score 0–1, sort descending. Output valid JSON only.`;
+
+  let targets = [];
+  let selIdx = -1;
+
+  const tbody  = document.getElementById('tbody');
+  const dpbody = document.getElementById('dpbody');
+  const go     = document.getElementById('go');
+  const titlemeta = document.getElementById('titlemeta');
+  const sbdot  = document.getElementById('sbdot');
+  const sbstatus = document.getElementById('sbstatus');
+  const sbCount  = document.getElementById('sb-count');
+  const sbMoon   = document.getElementById('sb-moon');
+  const sbLoc    = document.getElementById('sb-loc');
+
+  function pillClass(kind) {
+    const k = (kind || '').toLowerCase();
+    if (k.includes('glob')) return 'kp-glob';
+    if (k.includes('neb'))  return 'kp-neb';
+    if (k.includes('open') || k.includes('cluster')) return 'kp-open';
+    if (k.includes('gal'))  return 'kp-gal';
+    if (k.includes('snr') || k.includes('remnant'))  return 'kp-snr';
+    return 'kp-def';
+  }
+
+  function fmtT(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }); }
+    catch { return '—'; }
+  }
+
+  function fmtWin(a, b) {
+    if (!a || !b) return '—';
+    return fmtT(a) + ' – ' + fmtT(b);
+  }
+
+  function renderTable(data) {
+    targets = data.targets || [];
+    tbody.innerHTML = '';
+    if (!targets.length) {
+      tbody.innerHTML = '<div class="state-box">No targets pass the filters tonight.</div>';
+      return;
+    }
+    targets.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `
+        <div class="cd c-name">
+          <div class="rn-primary">${t.name || '—'}</div>
+          <div class="rn-common">${t.common_name || ''}</div>
+        </div>
+        <div class="cd c-kind"><span class="kind-pill ${pillClass(t.kind)}">${t.kind || '—'}</span></div>
+        <div class="cd c-mag" style="text-align:right">${t.magnitude ?? '—'}</div>
+        <div class="cd c-peak" style="text-align:right">${t.max_alt_deg ?? '—'}°</div>
+        <div class="cd c-air" style="text-align:right">${t.min_airmass ?? '—'}</div>
+        <div class="cd c-win" style="font-size:11px">${fmtWin(t.window_start, t.window_end)}</div>
+        <div class="cd c-trans">${fmtT(t.transit_time)}</div>
+        <div class="cd c-moon" style="text-align:right">${t.moon_sep_deg ?? '—'}°</div>
+        <div class="cd c-score score-val" style="text-align:right">${typeof t.score === 'number' ? t.score.toFixed(3) : '—'}</div>
+      `;
+      row.addEventListener('click', () => selectRow(i));
+      tbody.appendChild(row);
+    });
+  }
+
+  function selectRow(i) {
+    selIdx = i;
+    document.querySelectorAll('.row').forEach((r, j) => r.classList.toggle('sel', j === i));
+    const t = targets[i];
+    dpbody.innerHTML = `
+      <div class="dp-name">${t.name || ''}</div>
+      <div class="dp-common">${t.common_name || '—'}</div>
+      ${t.why ? `<div class="dp-why">${t.why}</div>` : ''}
+      <hr class="dp-divider"/>
+      <table class="kv">
+        <tr><td>Type</td><td>${t.kind || '—'}</td></tr>
+        <tr><td>Magnitude</td><td>${t.magnitude ?? '—'}</td></tr>
+        <tr><td>Peak alt</td><td>${t.max_alt_deg ?? '—'}°</td></tr>
+        <tr><td>Airmass</td><td>${t.min_airmass ?? '—'}</td></tr>
+        <tr><td>Transit</td><td>${fmtT(t.transit_time)}</td></tr>
+        <tr><td>Window</td><td style="font-size:11px">${fmtWin(t.window_start, t.window_end)}</td></tr>
+        <tr><td>Moon sep</td><td>${t.moon_sep_deg ?? '—'}°</td></tr>
+        <tr><td>Score</td><td style="color:var(--good);font-weight:600">${typeof t.score === 'number' ? t.score.toFixed(3) : '—'}</td></tr>
+      </table>
+    `;
+  }
+
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    sbdot.className = 'sb-dot';
+    sbstatus.textContent = 'Computing…';
+    titlemeta.textContent = 'Loading…';
+    tbody.innerHTML = '<div class="state-box"><div class="spinner"></div>Planning your night…</div>';
+    dpbody.innerHTML = '<div class="dp-empty">Select a target</div>';
+    selIdx = -1;
+
+    const lat      = parseFloat(document.getElementById('lat').value);
+    const lon      = parseFloat(document.getElementById('lon').value);
+    const aperture = parseFloat(document.getElementById('aperture').value);
+    const duration = parseFloat(document.getElementById('duration').value);
+    const minalt   = parseFloat(document.getElementById('minalt').value);
+    const dv       = document.getElementById('date').value;
+    const dateStr  = dv || new Date().toISOString().slice(0, 10);
+
+    sbLoc.textContent = `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+
+    const prompt = `Plan a ${duration}hr session on ${dateStr} from lat=${lat}, lon=${lon}. Aperture=${aperture}mm, min alt=${minalt}°. Return JSON only.`;
+
+    try {
+      const r = await fetch('/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lon, aperture_mm: aperture, duration_hours: duration, min_alt_deg: minalt, date: new Date(dateStr + 'T00:00:00Z').toISOString() }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+
+      renderTable(data);
+      const moonPct = data.moon_illumination != null ? Math.round(data.moon_illumination * 100) + '%' : '—';
+      sbMoon.textContent = moonPct;
+      sbCount.textContent = data.count ?? targets.length;
+      sbstatus.textContent = 'Plan complete';
+      sbdot.className = 'sb-dot';
+      titlemeta.textContent = `${data.count ?? targets.length} targets · Moon ${moonPct} · ${dateStr}`;
+      if (targets.length) selectRow(0);
+    } catch (err) {
+      tbody.innerHTML = `<div class="err-bar">${err.message || 'Error fetching plan.'}</div>`;
+      sbstatus.textContent = 'Error';
+      sbdot.className = 'sb-dot off';
+      titlemeta.textContent = 'Error';
+    } finally {
+      go.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
