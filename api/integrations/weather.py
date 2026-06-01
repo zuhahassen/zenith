@@ -1,8 +1,6 @@
 """
 weather.py - Fetch weather conditions relevant to stargazing
 Uses: Open-Meteo API (free, no API key needed)
-
-Week 3-4 focus: gather data on weather and coordinates
 """
 
 import httpx

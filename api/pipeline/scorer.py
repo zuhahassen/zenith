@@ -1,7 +1,9 @@
-"""Filters + 5-component scorer + surface brightness math.
+"""Filters + 5-component deterministic scorer + surface brightness math.
 
 Filters run first as boolean gates; whatever survives gets scored.
 Scores live in [0, 1] and combine with fixed weights.
+
+Moved from the former `targets/scoring.py`.
 """
 
 import math
@@ -10,9 +12,7 @@ from typing import Optional
 
 import numpy as np
 
-from .geometry import Geometry
-from .models import Gear, Preferences, Session, Target
-from .sky import Sky
+from .visibility import Gear, Geometry, Preferences, Session, Sky, Target
 
 
 WEIGHTS = {"s1": 0.30, "s2": 0.25, "s3": 0.20, "s4": 0.15, "s5": 0.10}
@@ -53,7 +53,7 @@ def passes_filters(t: Target, g: Geometry, gear: Gear, moon_illum: float,
     if g.window_minutes < min_window_min:
         return False, f"window too short ({g.window_minutes:.0f} min)"
 
-    moon_thresh = 15.0 + 30.0 * max(0.0, min(1.0, moon_illum))  # 15° new -> 45° full
+    moon_thresh = 15.0 + 30.0 * max(0.0, min(1.0, moon_illum))
     if g.moon_sep_deg < moon_thresh:
         return False, f"moon {g.moon_sep_deg:.0f}° away (needs ≥{moon_thresh:.0f}°)"
 
