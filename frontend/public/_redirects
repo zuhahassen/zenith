@@ -1,2 +1,4 @@
-/api/*  https://your-worker.workers.dev/:splat  200
-/*      /index.html                              200
+# Replace YOUR_WORKER_URL with your deployed worker URL before running wrangler pages deploy
+# Example: /api/*  https://zenith-api.zuha.workers.dev/:splat  200
+/api/*  https://YOUR_WORKER_URL/:splat  200
+/*      /index.html                     200

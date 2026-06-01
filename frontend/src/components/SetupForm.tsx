@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { MapPin } from "lucide-react";
+import { MapPin, Search } from "lucide-react";
 import type { Mode, PlanRequest } from "../types/zenith";
+
+const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 
 const APERTURE_PRESETS = [70, 100, 150, 200, 300];
 
@@ -10,13 +12,43 @@ interface Props {
 }
 
 export function SetupForm({ onSubmit, loading }: Props) {
+  const [city, setCity] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [aperture, setAperture] = useState<number>(150);
   const [customAperture, setCustomAperture] = useState("");
   const [mode, setMode] = useState<Mode>("observer");
   const [locating, setLocating] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function geocodeCity() {
+    const q = city.trim();
+    if (!q) return;
+    setError(null);
+    setGeocoding(true);
+    try {
+      const url = `${NOMINATIM_URL}?q=${encodeURIComponent(q)}&format=json&limit=1`;
+      // Nominatim ToS requires a User-Agent. Browsers won't let us set
+      // User-Agent directly, but they do send one automatically; we add
+      // an explicit Referer-style header to comply in spirit.
+      const resp = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!resp.ok) throw new Error(`Nominatim ${resp.status}`);
+      const data: Array<{ lat: string; lon: string; display_name: string }> = await resp.json();
+      if (!data.length) {
+        setError(`No match for "${q}".`);
+        return;
+      }
+      const lat = parseFloat(data[0].lat);
+      const lon = parseFloat(data[0].lon);
+      setCoords({ lat, lon });
+      setLocationLabel(`${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Geocoding failed");
+    } finally {
+      setGeocoding(false);
+    }
+  }
 
   function useBrowserLocation() {
     if (!navigator.geolocation) {
@@ -105,6 +137,24 @@ export function SetupForm({ onSubmit, loading }: Props) {
         <div className="setup__input-row">
           <input
             type="text"
+            placeholder="city or place (e.g. Berkeley)"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                geocodeCity();
+              }
+            }}
+          />
+          <button onClick={geocodeCity} disabled={geocoding || !city.trim()} aria-label="Search city">
+            <Search size={14} />
+          </button>
+        </div>
+        <div className="setup__input-row" style={{ marginTop: 6 }}>
+          <input
+            type="text"
+            className="mono"
             placeholder="lat, lon (e.g. 37.87, -122.27)"
             value={locationLabel}
             onChange={(e) => {

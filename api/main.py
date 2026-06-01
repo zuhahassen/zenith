@@ -293,23 +293,71 @@ def _mag_limit_for_aperture(aperture_mm: float) -> float:
     return 12.5
 
 
-async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
-    """Build the weather sample list the seeing predictor expects.
+_OPEN_METEO_HOURLY_URL = "https://api.open-meteo.com/v1/forecast"
+_HOURLY_VARS = (
+    "temperature_2m,relativehumidity_2m,dewpoint_2m,pressure_msl,"
+    "windspeed_10m,winddirection_10m,cloudcover"
+)
 
-    The current ``fetch_weather`` returns only the current hour. Until we
-    add a true hourly endpoint, the predictor runs on a single-sample
-    history; XGBoost handles missing rolling-window stats as NaN.
+
+async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
+    """Pull the last ~6 hours of hourly weather from Open-Meteo.
+
+    Returns rows matching the field names ``api.ml.features`` expects, so
+    the rolling-window stats (temp_mean_3h, wind_speed_delta_30m, …) get
+    real data instead of NaN. Open-Meteo's hourly endpoint is on a 1-hour
+    grid; the feature builder's time-based windows still work because they
+    bucket by timestamp rather than sample count.
     """
-    snapshot = await fetch_weather(lat, lon)
-    return [
-        {
-            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "temperature_2m": snapshot.get("temperature_c"),
-            "relative_humidity_2m": snapshot.get("humidity"),
-            "cloud_cover": snapshot.get("cloud_cover"),
-            "wind_speed_10m": snapshot.get("wind_speed"),
-        }
-    ]
+    import httpx
+
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": _HOURLY_VARS,
+        "past_days": 1,
+        "forecast_days": 1,
+        "timeformat": "unixtime",
+        "windspeed_unit": "ms",
+    }
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(_OPEN_METEO_HOURLY_URL, params=params)
+        resp.raise_for_status()
+        payload = resp.json()
+
+    hourly = payload.get("hourly") or {}
+    times: list[int] = hourly.get("time") or []
+    if not times:
+        return []
+
+    now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+
+    rows: list[dict] = []
+    for i, ts in enumerate(times):
+        if ts > now_ts:
+            continue  # don't feed forecast values into the predictor's history
+        rows.append({
+            "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
+            "temperature_2m": _safe_get(hourly, "temperature_2m", i),
+            "relative_humidity_2m": _safe_get(hourly, "relativehumidity_2m", i),
+            "dewpoint_2m": _safe_get(hourly, "dewpoint_2m", i),
+            "pressure_msl": _safe_get(hourly, "pressure_msl", i),
+            "wind_speed_10m": _safe_get(hourly, "windspeed_10m", i),
+            "wind_direction_10m": _safe_get(hourly, "winddirection_10m", i),
+            "cloud_cover": _safe_get(hourly, "cloudcover", i),
+        })
+
+    # Last ~6 hours ending now. Hourly grid = 6 samples; the seeing
+    # predictor accepts variable-length histories.
+    return rows[-6:]
+
+
+def _safe_get(d: dict, key: str, i: int):
+    arr = d.get(key)
+    if not arr or i >= len(arr):
+        return None
+    return arr[i]
 
 
 def _scored_to_json(r: Scored) -> dict:
