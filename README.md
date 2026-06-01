@@ -1,14 +1,10 @@
 # Zenith
 
-AI-powered astronomy observation planner. Give it a location, aperture, and date and it tells you what's worth observing tonight — ordered by a Claude session plan, scored by an atmospheric seeing model, filtered through a real visibility pipeline.
-
-Built for Stanford CS153 (AI Frontiers).
+AI-powered astronomy observation planner. Give it a location, aperture, and date and it tells you what's worth observing tonight — scored by an atmospheric seeing model, filtered through a real visibility pipeline.
 
 ## What it does
 
 You tell Zenith where you are and what you're pointing at the sky with. It pulls a fresh catalog of deep-sky objects from SIMBAD, computes which ones are actually above the horizon during astronomical night, scores them on altitude × moon separation × surface brightness × novelty, runs a seeing forecast against an XGBoost model trained on local weather, and finally asks Claude (Sonnet) to curate the top 30 into an ordered plan with reasoning. A Haiku-backed chat pane answers follow-ups against that plan as context.
-
-Nothing about the astronomy is hallucinated — Claude only ever re-orders and explains the deterministic results.
 
 ## Architecture
 
