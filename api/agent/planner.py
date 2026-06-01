@@ -21,8 +21,16 @@ from anthropic import AsyncAnthropic
 logger = logging.getLogger(__name__)
 
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-PLANNER_MODEL = "anthropic/claude-sonnet-4-5"
+# The Anthropic SDK appends `/v1/messages` to base_url automatically.
+# OpenRouter's Anthropic-compatible endpoint is at /api/v1/messages, so
+# base_url must be /api — anything ending in /v1 produces /v1/v1/messages
+# and a 404.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api"
+# OpenRouter uses dots, not dashes, in the version segment.
+# Override with OPENROUTER_PLANNER_MODEL if the catalog ID ever changes.
+PLANNER_MODEL = os.environ.get(
+    "OPENROUTER_PLANNER_MODEL", "anthropic/claude-sonnet-4.5"
+)
 
 MAX_TARGETS_IN_CONTEXT = 30
 

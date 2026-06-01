@@ -19,8 +19,12 @@ from anthropic import AsyncAnthropic
 logger = logging.getLogger(__name__)
 
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-EXPLAINER_MODEL = "anthropic/claude-haiku-4-5"
+# See planner.py — the Anthropic SDK auto-appends /v1/messages.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api"
+# OpenRouter uses dots, not dashes, in the version segment.
+EXPLAINER_MODEL = os.environ.get(
+    "OPENROUTER_EXPLAINER_MODEL", "anthropic/claude-haiku-4.5"
+)
 MAX_HISTORY_TURNS = 6  # 6 user/assistant pairs = 12 messages
 
 
