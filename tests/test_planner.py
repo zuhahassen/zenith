@@ -9,11 +9,20 @@ from datetime import datetime, timezone
 
 import pytest
 
-from targets import CATALOG, Gear, Observer, Preferences, Session, plan_session
-from targets.observer import location_for, session_start, time_grid
-from targets.scoring import surface_brightness
-from targets.sky import compute_sky
-from targets.models import Target
+from api.pipeline.catalog import CATALOG
+from api.pipeline.visibility import (
+    Gear,
+    Observer,
+    Preferences,
+    Session,
+    Target,
+    compute_sky,
+    location_for,
+    plan_session,
+    session_start,
+    time_grid,
+)
+from api.pipeline.scorer import surface_brightness
 
 
 BERKELEY = Observer(lat=37.8716, lon=-122.2727, elevation_m=52.0, name="Berkeley, CA")
