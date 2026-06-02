@@ -20,6 +20,9 @@ venv/
 .wrangler/
 node_modules/
 .dev.vars
+# Contains infra IDs / backend origin — keep out of git. Use the
+# committed worker/wrangler.toml.example as a template.
+worker/wrangler.toml
 
 # Frontend build artifacts
 frontend/dist/

@@ -1,0 +1,25 @@
+name = "zenith-api"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# Copy this file to worker/wrangler.toml and fill in real values.
+# worker/wrangler.toml is gitignored so infra IDs / backend origin stay
+# out of version control.
+
+# Backend FastAPI origin. Must be a resolvable hostname, NOT a bare IP —
+# Cloudflare Workers reject fetch() to a bare IP (error 1003).
+[vars]
+BACKEND_URL = "http://YOUR_BACKEND_HOST"
+
+[[kv_namespaces]]
+binding = "ZENITH_CACHE"
+id = "YOUR_KV_NAMESPACE_ID"
+
+[[r2_buckets]]
+binding = "ZENITH_IMAGES"
+bucket_name = "zenith-images"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zenith-db"
+database_id = "YOUR_D1_DATABASE_ID"
