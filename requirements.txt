@@ -15,6 +15,10 @@ python-dotenv>=1.0.0
 # ML (seeing predictor)
 xgboost>=2.0.0
 
+# EDA notebook (api/ml/notebooks/seeing_eda.ipynb) — dev only
+pandas>=2.0.0
+matplotlib>=3.7.0
+
 # Web API
 fastapi>=0.95.0
 uvicorn[standard]>=0.22.0
