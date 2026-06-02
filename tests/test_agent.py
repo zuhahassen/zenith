@@ -128,7 +128,7 @@ async def test_planner_calls_openrouter_with_expected_shape(monkeypatch):
     # Exactly one call to Claude
     assert len(fake.messages.calls) == 1
     call = fake.messages.calls[0]
-    assert call["model"] == "anthropic/claude-sonnet-4-5"
+    assert call["model"] == "anthropic/claude-sonnet-4.5"
     assert call["max_tokens"] >= 2000
 
     # System prompt has all three sections
@@ -187,7 +187,7 @@ async def test_explainer_uses_haiku_and_includes_plan_context(monkeypatch):
 
     assert "M13" in answer
     call = fake.messages.calls[0]
-    assert call["model"] == "anthropic/claude-haiku-4-5"
+    assert call["model"] == "anthropic/claude-haiku-4.5"
     assert "M13" in call["system"]
     assert call["messages"][-1] == {
         "role": "user",

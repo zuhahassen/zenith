@@ -39,3 +39,17 @@ CREATE TABLE IF NOT EXISTS weather_logs (
 
 CREATE INDEX IF NOT EXISTS idx_weather_logs_loc_ts
     ON weather_logs(location_hash, timestamp DESC);
+
+-- Thumbs up/down feedback on individual targets. Feeds the Claude planner so
+-- it can favour liked objects and avoid disliked ones on future plans.
+CREATE TABLE IF NOT EXISTS target_feedback (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      TEXT NOT NULL,
+    target_name  TEXT NOT NULL,
+    rating       INTEGER NOT NULL,          -- 1 (up), -1 (down), 0 (cleared)
+    note         TEXT,
+    timestamp    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_target_feedback_user
+    ON target_feedback(user_id, timestamp DESC);

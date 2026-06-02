@@ -64,6 +64,45 @@ export async function logWeather(db, { location_hash, timestamp, features }) {
     .run();
 }
 
+export async function insertFeedback(db, { user_id, target_name, rating, note }) {
+  await db
+    .prepare(
+      `INSERT INTO target_feedback (user_id, target_name, rating, note)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .bind(user_id, target_name, rating, note ?? null)
+    .run();
+}
+
+/**
+ * Latest rating per target for a user, split into liked/disliked name lists.
+ * Only the most recent rating for each target counts (so a thumbs-down that
+ * was later cleared/flipped doesn't linger).
+ */
+export async function getFeedback(db, userId, limit = 200) {
+  const { results } = await db
+    .prepare(
+      `SELECT target_name, rating
+         FROM target_feedback
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?`,
+    )
+    .bind(userId, limit)
+    .all();
+
+  const seen = new Set();
+  const liked = [];
+  const disliked = [];
+  for (const row of results || []) {
+    if (seen.has(row.target_name)) continue; // keep only the newest per target
+    seen.add(row.target_name);
+    if (row.rating > 0) liked.push(row.target_name);
+    else if (row.rating < 0) disliked.push(row.target_name);
+  }
+  return { liked, disliked };
+}
+
 function hydrate(row) {
   return {
     ...row,

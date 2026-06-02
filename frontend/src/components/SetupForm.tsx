@@ -1,10 +1,19 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MapPin, Search } from "lucide-react";
 import type { Mode, PlanRequest } from "../types/zenith";
+import { estimateBortle } from "../lib/lightPollution";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 
 const APERTURE_PRESETS = [70, 100, 150, 200, 300];
+
+// Sky-darkness presets map a human label to a representative Bortle integer.
+const DARKNESS_PRESETS: { label: string; bortle: number }[] = [
+  { label: "City (Bortle 8-9)", bortle: 9 },
+  { label: "Suburban (Bortle 6-7)", bortle: 6 },
+  { label: "Rural (Bortle 4-5)", bortle: 4 },
+  { label: "Dark site (Bortle 1-3)", bortle: 2 },
+];
 
 interface Props {
   onSubmit: (req: PlanRequest) => void;
@@ -18,6 +27,11 @@ export function SetupForm({ onSubmit, loading }: Props) {
   const [aperture, setAperture] = useState<number>(150);
   const [customAperture, setCustomAperture] = useState("");
   const [mode, setMode] = useState<Mode>("observer");
+  // null = auto (use the coordinate-based estimate).
+  const [bortle, setBortle] = useState<number | null>(null);
+  const [focalLength, setFocalLength] = useState("750");
+  const [sensorWidth, setSensorWidth] = useState("23.5");
+  const [sensorHeight, setSensorHeight] = useState("15.6");
   const [locating, setLocating] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +98,22 @@ export function SetupForm({ onSubmit, loading }: Props) {
     return { lat, lon };
   }
 
+  // Live estimate from whatever location is currently entered.
+  const parsedCoords = coords ?? parseTextLocation(locationLabel);
+  const estimatedBortle = useMemo(
+    () => (parsedCoords ? estimateBortle(parsedCoords.lat, parsedCoords.lon) : null),
+    [parsedCoords?.lat, parsedCoords?.lon],
+  );
+
+  // Live field-of-view readout (degrees) for astrophotographer mode.
+  const fov = useMemo(() => {
+    const f = parseFloat(focalLength);
+    const w = parseFloat(sensorWidth);
+    const h = parseFloat(sensorHeight);
+    if (!f || !w || !h || f <= 0) return null;
+    return { w: (w / f) * 57.3, h: (h / f) * 57.3 };
+  }, [focalLength, sensorWidth, sensorHeight]);
+
   function submit() {
     setError(null);
     const parsed = coords ?? parseTextLocation(locationLabel);
@@ -96,12 +126,20 @@ export function SetupForm({ onSubmit, loading }: Props) {
       setError("Aperture must be a positive number.");
       return;
     }
-    onSubmit({
+    const req: PlanRequest = {
       lat: parsed.lat,
       lon: parsed.lon,
       aperture_mm: apertureValue,
       mode,
-    });
+      // Omit when on auto so the backend uses its own estimate.
+      bortle_class: bortle ?? undefined,
+    };
+    if (mode === "astrophotographer") {
+      req.focal_length_mm = parseFloat(focalLength) || undefined;
+      req.sensor_width_mm = parseFloat(sensorWidth) || undefined;
+      req.sensor_height_mm = parseFloat(sensorHeight) || undefined;
+    }
+    onSubmit(req);
   }
 
   if (loading) {
@@ -137,7 +175,7 @@ export function SetupForm({ onSubmit, loading }: Props) {
         <div className="setup__input-row">
           <input
             type="text"
-            placeholder="city or place (e.g. Berkeley)"
+            placeholder="city or place (e.g. Stanford, CA)"
             value={city}
             onChange={(e) => setCity(e.target.value)}
             onKeyDown={(e) => {
@@ -210,6 +248,76 @@ export function SetupForm({ onSubmit, loading }: Props) {
           </button>
         </div>
       </div>
+
+      <div className="setup__field">
+        <div className="setup__label">Sky darkness</div>
+        <div className="mode-pill" style={{ flexWrap: "wrap" }}>
+          <button
+            className={bortle === null ? "active" : ""}
+            onClick={() => setBortle(null)}
+          >
+            Auto
+          </button>
+          {DARKNESS_PRESETS.map((p) => (
+            <button
+              key={p.bortle}
+              className={bortle === p.bortle ? "active" : ""}
+              onClick={() => setBortle(p.bortle)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {estimatedBortle !== null && (
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+            Estimated for your location: <span className="mono">Bortle {estimatedBortle}</span>
+            {bortle !== null ? " (overridden above)" : ""}
+          </div>
+        )}
+      </div>
+
+      {mode === "astrophotographer" && (
+        <div className="setup__field">
+          <div className="setup__label">Imaging train</div>
+          <div className="aperture-row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <label className="muted" style={{ fontSize: 11 }}>
+              Focal length (mm)
+              <input
+                className="mono"
+                style={{ width: 90, display: "block", marginTop: 2 }}
+                value={focalLength}
+                onChange={(e) => setFocalLength(e.target.value)}
+              />
+            </label>
+            <label className="muted" style={{ fontSize: 11 }}>
+              Sensor width (mm)
+              <input
+                className="mono"
+                style={{ width: 90, display: "block", marginTop: 2 }}
+                value={sensorWidth}
+                onChange={(e) => setSensorWidth(e.target.value)}
+              />
+            </label>
+            <label className="muted" style={{ fontSize: 11 }}>
+              Sensor height (mm)
+              <input
+                className="mono"
+                style={{ width: 90, display: "block", marginTop: 2 }}
+                value={sensorHeight}
+                onChange={(e) => setSensorHeight(e.target.value)}
+              />
+            </label>
+          </div>
+          {fov && (
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+              Field of view:{" "}
+              <span className="mono">
+                {fov.w.toFixed(1)}° × {fov.h.toFixed(1)}°
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <div className="muted" style={{ color: "#d97070" }}>{error}</div>}
 

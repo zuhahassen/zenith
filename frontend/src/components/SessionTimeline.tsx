@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -27,6 +28,8 @@ interface Props {
   targets: ScoredTarget[];
   seeingForecast: SeeingSlot[];
   onSelectTarget: (t: ScoredTarget) => void;
+  moonIllumination?: number | null;
+  bortleClass?: number;
 }
 
 // Internal recharts row shape. One row per target, plus an extra "axis row"
@@ -39,11 +42,41 @@ interface Row {
   ref?: ScoredTarget;
 }
 
-export function SessionTimeline({ targets, seeingForecast, onSelectTarget }: Props) {
+export function SessionTimeline({
+  targets,
+  seeingForecast,
+  onSelectTarget,
+  moonIllumination,
+  bortleClass,
+}: Props) {
+  // Chronological order: read the timeline left-to-right by start time, not
+  // by score.
   const visible = useMemo(
-    () => targets.filter((t) => t.window_start && t.window_end).slice(0, 18),
+    () =>
+      targets
+        .filter((t) => t.window_start && t.window_end)
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(a.window_start as string).getTime() -
+            new Date(b.window_start as string).getTime(),
+        )
+        .slice(0, 18),
     [targets],
   );
+
+  // "Now" indicator, refreshed each minute.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const seeingRange = useMemo(() => {
+    const vals = seeingForecast.map((s) => s.predicted_seeing_arcsec).filter((v) => v > 0);
+    if (!vals.length) return null;
+    return { min: Math.min(...vals), max: Math.max(...vals) };
+  }, [seeingForecast]);
 
   const rows: Row[] = useMemo(
     () =>
@@ -79,6 +112,8 @@ export function SessionTimeline({ targets, seeingForecast, onSelectTarget }: Pro
     );
   }
 
+  const nowInDomain = now >= domain[0] && now <= domain[1];
+
   return (
     <div className="timeline">
       <div className="timeline__heading">
@@ -86,6 +121,30 @@ export function SessionTimeline({ targets, seeingForecast, onSelectTarget }: Pro
         <div className="muted mono" style={{ fontSize: 11 }}>
           {format(domain[0], "HH:mm")} → {format(domain[1], "HH:mm")} UTC
         </div>
+      </div>
+
+      {/* Summary bar — one monospace row of session-level stats. */}
+      <div
+        className="mono"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 16,
+          fontSize: 11,
+          color: "#888680",
+          padding: "0 32px 12px 80px",
+        }}
+      >
+        <span>{visible.length} targets</span>
+        {seeingRange && (
+          <span>
+            seeing {seeingRange.min.toFixed(1)}–{seeingRange.max.toFixed(1)}″
+          </span>
+        )}
+        {moonIllumination != null && (
+          <span>moon {(moonIllumination * 100).toFixed(0)}%</span>
+        )}
+        {bortleClass != null && <span>Bortle {bortleClass}</span>}
       </div>
 
       <div className="timeline__chart" style={{ height: 32 + visible.length * 26 }}>
@@ -96,6 +155,21 @@ export function SessionTimeline({ targets, seeingForecast, onSelectTarget }: Pro
             margin={{ top: 24, right: 32, bottom: 8, left: 80 }}
           >
             <CartesianGrid stroke="#1a1a1a" horizontal={false} />
+            {nowInDomain && (
+              <ReferenceLine
+                x={now}
+                stroke="#e8a045"
+                strokeWidth={1.25}
+                ifOverflow="extendDomain"
+                label={{
+                  value: "now",
+                  position: "top",
+                  fill: "#e8a045",
+                  fontSize: 10,
+                  fontFamily: "ui-monospace",
+                }}
+              />
+            )}
             <XAxis
               type="number"
               domain={domain}

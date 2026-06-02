@@ -14,6 +14,8 @@
  *   env.BACKEND_URL   - FastAPI origin
  */
 
+import { getFeedback, insertFeedback } from "./db.js";
+
 // Per-route cache TTLs in seconds. Anything not listed is uncached.
 const CACHE_TTL = {
   "/api/targets": 60 * 60 * 24, // 24 hr — catalog is slow-changing
@@ -43,6 +45,18 @@ export default {
 
     if (!url.pathname.startsWith(PROXY_PREFIX)) {
       return json({ error: "not found", path: url.pathname }, 404);
+    }
+
+    // Feedback is handled at the edge — it writes straight to D1 and never
+    // touches the FastAPI origin.
+    if (url.pathname === "/api/feedback" && request.method === "POST") {
+      return handleFeedback(request, env);
+    }
+
+    // plan-ai needs its JSON body enriched with the user's stored feedback
+    // before being proxied, so it can't be a transparent stream proxy.
+    if (url.pathname === "/api/plan-ai" && request.method === "POST") {
+      return handlePlanAi(request, url, env);
     }
 
     const ttl = CACHE_TTL[url.pathname] ?? 0;
@@ -94,6 +108,61 @@ async function proxyToBackend(request, url, env) {
 
   try {
     return await fetch(upstream);
+  } catch (err) {
+    return json({ error: "backend unreachable", detail: String(err) }, 502);
+  }
+}
+
+async function handleFeedback(request, env) {
+  if (!env.DB) return json({ error: "D1 not configured" }, 503);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "invalid JSON" }, 400);
+  }
+  const { user_id, target_name, rating, note } = body || {};
+  if (!user_id || !target_name || typeof rating !== "number") {
+    return json({ error: "user_id, target_name and numeric rating required" }, 400);
+  }
+  try {
+    await insertFeedback(env.DB, { user_id, target_name, rating, note });
+  } catch (err) {
+    return json({ error: "db write failed", detail: String(err) }, 500);
+  }
+  return json({ ok: true });
+}
+
+async function handlePlanAi(request, url, env) {
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  // Inject the user's liked/disliked targets so the planner can use them.
+  if (env.DB && body && body.user_id) {
+    try {
+      const { liked, disliked } = await getFeedback(env.DB, body.user_id);
+      body.liked_targets = liked;
+      body.disliked_targets = disliked;
+    } catch {
+      /* feedback enrichment is best-effort, never fatal */
+    }
+  }
+
+  const backend = (env.BACKEND_URL || "").replace(/\/$/, "");
+  if (!backend) return json({ error: "BACKEND_URL not configured" }, 500);
+
+  const upstream = new Request(backend + url.pathname + url.search, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  try {
+    const resp = await fetch(upstream);
+    return withCors(resp, { "X-Zenith-Cache": "BYPASS" });
   } catch (err) {
     return json({ error: "backend unreachable", detail: String(err) }, 502);
   }

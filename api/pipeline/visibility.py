@@ -79,6 +79,11 @@ class Scored:
     surface_brightness: Optional[float]
     sb_limit: float
     why: str
+    bortle_class: Optional[int] = None
+    sb_penalty: float = 1.0
+    filter_windows: Optional[dict] = None
+    fov_note: Optional[str] = None
+    fov_score: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -252,13 +257,26 @@ def plan_session(
     gear: Optional[Gear] = None,
     prefs: Optional[Preferences] = None,
     now: Optional[datetime] = None,
+    bortle_class: int = 6,
+    mode: str = "observer",
+    fov_width_deg: Optional[float] = None,
+    fov_height_deg: Optional[float] = None,
 ) -> list[Scored]:
     # Imports here to avoid a circular import between visibility and scorer.
-    from .scorer import passes_filters, sb_limit, score, surface_brightness
+    from .scorer import (
+        filter_window_recommendation,
+        fov_match_score,
+        passes_filters,
+        sb_limit,
+        score,
+        surface_brightness,
+        surface_brightness_penalty,
+    )
 
     gear = gear or Gear()
     prefs = prefs or Preferences()
     now = now or datetime.now(tz=timezone.utc)
+    is_astro = mode == "astrophotographer"
 
     loc = location_for(observer)
     times = time_grid(session_start(observer, session, loc), session)
@@ -274,6 +292,29 @@ def plan_session(
         total, comps = score(t, g, sky, session, gear, prefs, now=now)
         sb = surface_brightness(t)
         limit = sb_limit(gear)
+
+        # Bortle-aware surface-brightness penalty (all modes).
+        penalty = surface_brightness_penalty(t, bortle_class)
+        total *= penalty
+
+        # Astrophotographer-only: per-filter windows + sensor framing.
+        filter_windows = None
+        fov_note = None
+        fov_score = None
+        if is_astro:
+            in_idx = np.where(g.in_window)[0]
+            slots = [
+                {"time": _to_dt(sky.times[i]), "alt": float(g.alt[i])}
+                for i in in_idx
+            ]
+            filter_windows = filter_window_recommendation(slots, mode) or None
+            if fov_width_deg and fov_height_deg:
+                size_deg = (t.size_arcmin[0] / 60.0) if t.size_arcmin and t.size_arcmin[0] else None
+                fov_score, fov_note = fov_match_score(
+                    size_deg, fov_width_deg, fov_height_deg
+                )
+                total *= fov_score
+
         out.append(Scored(
             target=t,
             score=total,
@@ -287,6 +328,11 @@ def plan_session(
             surface_brightness=sb,
             sb_limit=limit,
             why=_summarize(g, sb, limit),
+            bortle_class=bortle_class,
+            sb_penalty=penalty,
+            filter_windows=filter_windows,
+            fov_note=fov_note,
+            fov_score=fov_score,
         ))
 
     out.sort(key=lambda r: r.score, reverse=True)

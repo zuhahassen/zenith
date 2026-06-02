@@ -1,21 +1,36 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { format } from "date-fns";
 
-import { ChatPane } from "./components/ChatPane";
 import { SeeingForecast } from "./components/SeeingForecast";
-import { SessionTimeline } from "./components/SessionTimeline";
 import { SetupForm } from "./components/SetupForm";
 import { TargetCard } from "./components/TargetCard";
 import { usePlan } from "./hooks/usePlan";
+import { getUserId, submitFeedback } from "./lib/feedback";
 import type { PlanRequest, PlanResponse, ScoredTarget } from "./types/zenith";
+
+// Lazy-loaded: neither is needed until a plan exists, so keep them out of the
+// initial bundle. Both are named exports, so adapt them to default exports.
+const SessionTimeline = lazy(() =>
+  import("./components/SessionTimeline").then((m) => ({ default: m.SessionTimeline })),
+);
+const ChatPane = lazy(() =>
+  import("./components/ChatPane").then((m) => ({ default: m.ChatPane })),
+);
 
 export default function App() {
   const plan = usePlan();
   const [selectedTarget, setSelectedTarget] = useState<ScoredTarget | null>(null);
+  // Per-session target ratings keyed by target name (1 up, -1 down).
+  const [ratings, setRatings] = useState<Record<string, number>>({});
 
   function submit(req: PlanRequest) {
     setSelectedTarget(null);
-    plan.mutate(req);
+    plan.mutate({ ...req, user_id: getUserId() });
+  }
+
+  function rate(name: string, rating: number) {
+    setRatings((r) => ({ ...r, [name]: rating }));
+    submitFeedback(name, rating);
   }
 
   const data: PlanResponse | undefined = plan.data;
@@ -53,10 +68,17 @@ export default function App() {
           target={selectedTarget}
           aiPlan={data?.ai_plan}
           predictedSeeing={seeingForTarget(data, selectedTarget)}
+          mode={data?.request.mode}
+          rating={selectedTarget ? ratings[selectedTarget.name] ?? 0 : 0}
+          onRate={rate}
           onClose={() => setSelectedTarget(null)}
         />
 
-        {data && <ChatPane planContext={planContextFor(data)} />}
+        {data && (
+          <Suspense fallback={null}>
+            <ChatPane planContext={planContextFor(data)} />
+          </Suspense>
+        )}
       </main>
     </div>
   );
@@ -123,11 +145,15 @@ function PlanView({ data, onReset, onSelect }: PlanViewProps) {
             "No targets matched. Try a different date, location, or gear."}
         </div>
       ) : (
-        <SessionTimeline
-          targets={data.targets}
-          seeingForecast={data.seeing_forecast}
-          onSelectTarget={onSelect}
-        />
+        <Suspense fallback={<div className="muted" style={{ padding: 32 }}>Loading timeline…</div>}>
+          <SessionTimeline
+            targets={data.targets}
+            seeingForecast={data.seeing_forecast}
+            onSelectTarget={onSelect}
+            moonIllumination={data.moon_illumination}
+            bortleClass={data.bortle_class}
+          />
+        </Suspense>
       )}
 
       {notes && (

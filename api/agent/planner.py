@@ -181,11 +181,29 @@ class SessionPlanner:
     @staticmethod
     def _compose_system_prompt(context: dict) -> str:
         ctx_json = json.dumps(context, indent=2, default=str)
-        return "\n\n".join([
+        sections = [
             SYSTEM_ROLE,
             "## Structured context\n\n```json\n" + ctx_json + "\n```",
-            OUTPUT_SCHEMA,
-        ])
+        ]
+        feedback = (context.get("user_profile") or {}).get("target_feedback")
+        if feedback:
+            liked = feedback.get("liked") if isinstance(feedback, dict) else None
+            disliked = feedback.get("disliked") if isinstance(feedback, dict) else None
+            lines = ["## User feedback"]
+            if liked:
+                lines.append(
+                    "The user has previously rated these targets positively: "
+                    f"{', '.join(liked)}. Favour them and similar objects."
+                )
+            if disliked:
+                lines.append(
+                    "Avoid re-recommending targets the user rated negatively: "
+                    f"{', '.join(disliked)}."
+                )
+            if len(lines) > 1:
+                sections.append("\n".join(lines))
+        sections.append(OUTPUT_SCHEMA)
+        return "\n\n".join(sections)
 
 
 # ---------------------------------------------------------------------------

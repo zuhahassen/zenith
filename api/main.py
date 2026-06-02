@@ -41,6 +41,7 @@ from .agent.planner import SessionPlanner
 from .integrations.mast import MASTClient
 from .integrations.weather import fetch_nightly_forecast, fetch_weather
 from .pipeline.catalog import SEED_CATALOG, fetch_targets, to_targets
+from .pipeline.light_pollution import estimate_bortle
 from .pipeline.seeing import NUM_SLOTS, SeeingPredictor
 from .pipeline.visibility import Gear, Observer, Scored, Session, plan_session
 
@@ -92,6 +93,18 @@ class PlanRequest(BaseModel):
     )
     mode: Mode = Field("observer")
 
+    # Sky darkness. When omitted, estimated from coordinates.
+    bortle_class: Optional[int] = Field(default=None, ge=1, le=9)
+
+    # Astrophotographer equipment (used for FoV framing in astro mode).
+    focal_length_mm: Optional[float] = Field(default=None, gt=0)
+    sensor_width_mm: Optional[float] = Field(default=None, gt=0)
+    sensor_height_mm: Optional[float] = Field(default=None, gt=0)
+
+    # Feedback context (injected by the Worker from D1 when user_id is known).
+    liked_targets: list[str] = Field(default_factory=list)
+    disliked_targets: list[str] = Field(default_factory=list)
+
     # Optional knobs that mirror the legacy /plan contract.
     elevation_m: float = 0.0
     duration_hours: float = 4.0
@@ -137,11 +150,20 @@ async def api_plan_ai(req: PlanRequest):
     returned and ``ai_plan`` carries an ``error`` string.
     """
     base = await _run_pipeline(req)
+    user_profile = None
+    if req.liked_targets or req.disliked_targets:
+        user_profile = {
+            "mode": req.mode,
+            "target_feedback": {
+                "liked": req.liked_targets,
+                "disliked": req.disliked_targets,
+            },
+        }
     try:
         result = await _planner.plan(
             targets=base["targets"],
             seeing_forecast=base["seeing_forecast"],
-            user_profile=None,
+            user_profile=user_profile,
             mode=req.mode,
         )
         ai_plan = result.to_dict()
@@ -255,7 +277,16 @@ async def _run_pipeline(req: PlanRequest) -> dict:
     )
     targets = to_targets(catalog_rows) if catalog_rows else SEED_CATALOG
 
-    scored = plan_session(obs, session, targets, gear=gear)
+    estimated_bortle = estimate_bortle(req.lat, req.lon)
+    bortle = req.bortle_class or estimated_bortle
+
+    fov_w, fov_h = _sensor_fov_deg(req)
+
+    scored = plan_session(
+        obs, session, targets, gear=gear,
+        bortle_class=bortle, mode=req.mode,
+        fov_width_deg=fov_w, fov_height_deg=fov_h,
+    )
     notice = None if scored else _empty_plan_reason(obs, session, targets)
 
     try:
@@ -284,7 +315,29 @@ async def _run_pipeline(req: PlanRequest) -> dict:
         "targets": [_scored_to_json(r) for r in scored],
         "catalog_source": "simbad" if catalog_rows else "seed",
         "notice": notice,
+        "bortle_class": bortle,
+        "estimated_bortle": estimated_bortle,
+        "fov_deg": (
+            {"width": round(fov_w, 2), "height": round(fov_h, 2)}
+            if fov_w and fov_h else None
+        ),
     }
+
+
+def _sensor_fov_deg(req: PlanRequest) -> tuple[Optional[float], Optional[float]]:
+    """Field of view in degrees from sensor size + focal length.
+
+    FoV_deg = (sensor_mm / focal_mm) * 57.3 (small-angle, degrees per radian).
+    Only computed in astrophotographer mode when all three values are present.
+    """
+    if req.mode != "astrophotographer":
+        return None, None
+    f = req.focal_length_mm
+    w = req.sensor_width_mm
+    h = req.sensor_height_mm
+    if not (f and w and h):
+        return None, None
+    return (w / f) * 57.3, (h / f) * 57.3
 
 
 def _empty_plan_reason(obs: Observer, session: Session, targets) -> str:
@@ -514,4 +567,9 @@ def _scored_to_json(r: Scored) -> dict:
         ),
         "sb_limit": round(r.sb_limit, 2),
         "why": r.why,
+        "bortle_class": r.bortle_class,
+        "sb_penalty": round(r.sb_penalty, 2),
+        "filter_windows": r.filter_windows,
+        "fov_note": r.fov_note,
+        "fov_score": round(r.fov_score, 2) if r.fov_score is not None else None,
     }

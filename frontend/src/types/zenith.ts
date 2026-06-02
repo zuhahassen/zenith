@@ -18,9 +18,21 @@ export interface PlanRequest {
   date?: string | null;
   user_id?: string | null;
   mode: Mode;
+  bortle_class?: number | null;
+  focal_length_mm?: number | null;
+  sensor_width_mm?: number | null;
+  sensor_height_mm?: number | null;
+  liked_targets?: string[];
+  disliked_targets?: string[];
   elevation_m?: number;
   duration_hours?: number;
   min_alt_deg?: number;
+}
+
+export interface FilterWindow {
+  start: string;
+  end: string;
+  note: string;
 }
 
 export interface ScoredTarget {
@@ -42,6 +54,12 @@ export interface ScoredTarget {
   surface_brightness: number | null;
   sb_limit: number;
   why: string;
+  bortle_class: number | null;
+  sb_penalty: number;
+  // Astrophotographer-only fields (null/undefined in observer mode).
+  filter_windows?: Record<string, FilterWindow> | null;
+  fov_note?: string | null;
+  fov_score?: number | null;
 }
 
 export interface SeeingSlot {
@@ -97,6 +115,9 @@ export interface PlanResponse {
   seeing_model_loaded: boolean;
   targets: ScoredTarget[];
   catalog_source: "simbad" | "seed";
+  bortle_class: number;
+  estimated_bortle: number;
+  fov_deg?: { width: number; height: number } | null;
   // Present when the plan is empty: a human-readable reason (no darkness,
   // nothing above the horizon, or no catalog match). null when targets exist.
   notice?: string | null;
