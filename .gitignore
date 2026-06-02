@@ -24,6 +24,9 @@ node_modules/
 # committed worker/wrangler.toml.example as a template.
 worker/wrangler.toml
 
+# ERA5 reanalysis caches + harvest artifacts (large; regenerate via api.ml.harvest_stanford)
+api/ml/data/
+
 # Frontend build artifacts
 frontend/dist/
 frontend/*.tsbuildinfo

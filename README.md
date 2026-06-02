@@ -54,7 +54,7 @@ across the wider window.
 ## Atmospheric-seeing model
 
 Seeing (FWHM, arcseconds) is forecast for sixteen 30-minute slots by a gradient
--boosted regression tree ensemble (XGBoost). Inputs are a 25-feature vector
+-boosted regression tree ensemble (XGBoost). Inputs are a 24-feature vector
 (`api/ml/features.py`) built from a trailing weather history: instantaneous
 state, rolling temperature/humidity statistics over 30 min / 1 h / 3 h, a wind
 -shear delta, and cyclic encodings of hour-of-night and day-of-year. Missing
@@ -197,7 +197,7 @@ zenith/
 │   │   ├── catalog.py       # live SIMBAD + Messier seed fallback
 │   │   └── seeing.py        # XGBoost inference + climatological fallback
 │   ├── ml/
-│   │   ├── features.py      # 25-feature vector
+│   │   ├── features.py      # 24-feature vector
 │   │   ├── train_xgb.py     # synthetic + ERA5 training entrypoint
 │   │   └── era5.py          # ERA5 Cn^2 -> seeing label derivation
 │   └── integrations/weather.py
@@ -222,7 +222,7 @@ zenith/
 | Visibility pipeline           | Implemented | Astropy positional astronomy, twilight-bounded windows       |
 | Deterministic scorer          | Implemented | Weighted score with SB penalty, filter windows, FoV match    |
 | Light-pollution model         | Implemented | Bortle from coordinates or user override                     |
-| Seeing features + inference    | Implemented | 25-feature vector, XGBoost with climatological fallback      |
+| Seeing features + inference    | Implemented | 24-feature vector, XGBoost quantile model + climatological fallback |
 | Synthetic training path       | Implemented | `train_xgb.py` default                                       |
 | ERA5 training path            | Implemented | Cn^2 -> Fried -> FWHM label derivation (`era5.py`)           |
 | Feedback persistence          | Implemented | Per-target ratings to D1 via the Worker                      |

@@ -47,6 +47,10 @@ SEED = 42
 N_SAMPLES = 10_000
 HISTORY_HOURS = 12  # hourly readings per sample
 
+# Quantiles predicted by the model, in column order. P50 is the point
+# estimate; (P90 - P10) is the uncertainty interval used for confidence.
+QUANTILES = [0.1, 0.5, 0.9]
+
 # Target seeing log-normal anchor (arcsec).
 SEEING_MEAN = 1.8
 SEEING_STD = 0.6
@@ -212,6 +216,20 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     return {"mae": mae, "rmse": rmse, "r2": r2}
 
 
+def _interval_coverage(y_true: np.ndarray, preds: np.ndarray) -> float:
+    """Fraction of targets falling inside the [P10, P90] band.
+
+    For a well-calibrated 10/90 interval this should be ~0.80. Returns NaN for
+    a 1-D (point-estimate) prediction where no interval exists.
+    """
+    if preds.ndim != 2 or preds.shape[1] < 3:
+        return float("nan")
+    lo = preds[:, 0]
+    hi = preds[:, -1]
+    inside = (y_true >= lo) & (y_true <= hi)
+    return float(np.mean(inside))
+
+
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
@@ -261,12 +279,18 @@ def train(
     dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=list(FEATURE_NAMES))
     dval = xgb.DMatrix(X_val, label=y_val, feature_names=list(FEATURE_NAMES))
 
+    # Multi-quantile regression: a single booster predicts the 10th / 50th /
+    # 90th percentiles of seeing simultaneously (XGBoost >= 2.0). The median
+    # (P50) is the point estimate; the P90-P10 spread drives the confidence
+    # interval consumed by api/pipeline/seeing.py. Column order of the
+    # prediction matches QUANTILES.
     params = {
         "max_depth": 5,
         "eta": 0.05,             # learning_rate
         "subsample": 0.8,
         "colsample_bytree": 0.8,
-        "objective": "reg:squarederror",
+        "objective": "reg:quantileerror",
+        "quantile_alpha": np.array(QUANTILES),
         "seed": seed,
     }
     booster = xgb.train(
@@ -278,12 +302,16 @@ def train(
     )
 
     preds = booster.predict(dval)
-    metrics = _metrics(y_val, preds)
+    # preds is (n_val, len(QUANTILES)); evaluate the point estimate on the median.
+    median = preds[:, QUANTILES.index(0.5)] if preds.ndim == 2 else preds
+    metrics = _metrics(y_val, median)
+    metrics["coverage_80"] = _interval_coverage(y_val, preds)
 
-    print("\nValidation metrics")
-    print(f"  MAE  : {metrics['mae']:.4f} arcsec")
-    print(f"  RMSE : {metrics['rmse']:.4f} arcsec")
-    print(f"  R^2  : {metrics['r2']:.4f}")
+    print(f"\nValidation metrics (quantiles {QUANTILES})")
+    print(f"  MAE (P50)      : {metrics['mae']:.4f} arcsec")
+    print(f"  RMSE (P50)     : {metrics['rmse']:.4f} arcsec")
+    print(f"  R^2 (P50)      : {metrics['r2']:.4f}")
+    print(f"  P10-P90 cover  : {metrics['coverage_80']:.3f} (target ~0.80)")
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

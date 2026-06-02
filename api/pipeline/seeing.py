@@ -38,6 +38,12 @@ DEFAULT_MODEL_PATH = Path(__file__).resolve().parent.parent / "ml" / "models" / 
 FALLBACK_FWHM_ARCSEC = 2.0
 FALLBACK_CONFIDENCE  = 0.3
 
+# Confidence bounds and interval handling for the quantile model.
+CONF_MIN = 0.4
+CONF_MAX = 0.95
+MIN_INTERVAL_ARCSEC = 1.0 / CONF_MAX  # so 1/spread can reach CONF_MAX cleanly
+LEGACY_CONFIDENCE = 0.7               # flat confidence for 1-D point models
+
 NUM_SLOTS = 16
 SLOT_MINUTES = 30
 
@@ -161,16 +167,13 @@ class SeeingPredictor:
         dmatrix = xgb.DMatrix(features, feature_names=list(FEATURE_NAMES))
         preds = self._model.predict(dmatrix)
 
-        # Confidence proxy: distance of the prediction from the fallback
-        # rescaled into [0.4, 0.95]. Replace this with quantile-regression
-        # or model-margin confidence once the training script supports it.
-        confidences = _confidence_from_preds(preds)
+        seeing, confidence = _seeing_and_confidence(preds)
 
         return [
             {
                 "slot": slot_times[i].isoformat(),
-                "predicted_seeing_arcsec": float(preds[i]),
-                "confidence": float(confidences[i]),
+                "predicted_seeing_arcsec": float(seeing[i]),
+                "confidence": float(confidence[i]),
             }
             for i in range(NUM_SLOTS)
         ]
@@ -233,8 +236,30 @@ def _fallback_forecast(anchor: datetime) -> list[dict]:
     ]
 
 
-def _confidence_from_preds(preds: np.ndarray) -> np.ndarray:
-    """Placeholder confidence: clip to [0.4, 0.95] until the trained model
-    can supply quantile bands or margin scores."""
-    base = np.full_like(preds, 0.7, dtype=float)
-    return np.clip(base, 0.4, 0.95)
+def _seeing_and_confidence(preds: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Resolve point-estimate seeing and per-slot confidence from raw model output.
+
+    Two model shapes are supported for backward compatibility:
+
+      * Quantile model (preferred): ``preds`` is (N, 3) for the P10/P50/P90
+        columns. The point estimate is the median; confidence comes from the
+        width of the 80% interval:
+
+            confidence = clip(1.0 / (fwhm_90 - fwhm_10), 0.4, 0.95)
+
+      * Legacy point-estimate model: ``preds`` is 1-D. We return it directly
+        with a flat mid-band confidence, since no interval is available.
+    """
+    preds = np.asarray(preds, dtype=float)
+    if preds.ndim == 2 and preds.shape[1] >= 3:
+        p10 = preds[:, 0]
+        p50 = preds[:, 1]
+        p90 = preds[:, 2]
+        # Guard against quantile crossing / degenerate intervals.
+        spread = np.maximum(p90 - p10, MIN_INTERVAL_ARCSEC)
+        confidence = np.clip(1.0 / spread, CONF_MIN, CONF_MAX)
+        return p50, confidence
+
+    seeing = preds.ravel()
+    confidence = np.clip(np.full_like(seeing, LEGACY_CONFIDENCE), CONF_MIN, CONF_MAX)
+    return seeing, confidence
