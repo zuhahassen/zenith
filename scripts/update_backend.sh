@@ -46,8 +46,23 @@ log "Installing requirements"
 log "Restarting zenith service"
 sudo systemctl restart zenith
 
-log "Health check (waiting 2s for boot)"
-sleep 2
-curl -fsS http://localhost/api/health && echo
-
-log "Done."
+log "Health check (uvicorn imports astropy/xgboost on boot — can take ~5-10s)"
+# Poll instead of a single fixed wait: the heavy startup imports mean the
+# port isn't listening for a few seconds, which previously caused a spurious
+# 502 from nginx.
+ok=0
+for i in $(seq 1 20); do
+  if curl -fsS http://localhost/api/health >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$ok" == "1" ]]; then
+  curl -fsS http://localhost/api/health && echo
+  log "Done — backend healthy."
+else
+  echo "✗ Backend did not become healthy within 20s. Recent logs:" >&2
+  journalctl -u zenith -n 30 --no-pager >&2 || true
+  exit 1
+fi
