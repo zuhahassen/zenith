@@ -15,14 +15,20 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-from ..ml.features import N_FEATURES, build_feature_vector
+from ..ml.features import FEATURE_NAMES, N_FEATURES, build_feature_vector
 
 
 logger = logging.getLogger(__name__)
+
+# Default location of the trained model produced by ``api/ml/train_xgb.py``.
+# Used when neither an explicit ``model_path`` nor the ``MODEL_PATH`` env var
+# is provided, so the model works out of the box after training.
+DEFAULT_MODEL_PATH = Path(__file__).resolve().parent.parent / "ml" / "models" / "seeing_model.json"
 
 
 # Climatological prior — used when no model is loaded. 2.0 arcsec is a
@@ -47,7 +53,10 @@ class SeeingPredictor:
     """
 
     def __init__(self, model_path: Optional[str] = None):
-        self.model_path = model_path or os.environ.get("MODEL_PATH")
+        resolved = model_path or os.environ.get("MODEL_PATH")
+        if not resolved and DEFAULT_MODEL_PATH.exists():
+            resolved = str(DEFAULT_MODEL_PATH)
+        self.model_path = resolved
         self._model = None
         self._load_error: Optional[str] = None
         self._load()
@@ -148,7 +157,8 @@ class SeeingPredictor:
             window = _history_up_to(weather_history, slot_time)
             features[i] = build_feature_vector(window)
 
-        dmatrix = xgb.DMatrix(features)
+        # Feature names must match those baked into the model at train time.
+        dmatrix = xgb.DMatrix(features, feature_names=list(FEATURE_NAMES))
         preds = self._model.predict(dmatrix)
 
         # Confidence proxy: distance of the prediction from the fallback
