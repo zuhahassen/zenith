@@ -13,8 +13,9 @@ export function TargetCard({ target, aiPlan, predictedSeeing, onClose }: Props) 
   const open = target !== null;
 
   // Prefer Claude's "why" if available — falls back to the deterministic one.
-  const aiWhy = aiPlan?.ordered_targets.find((t) => t.name === target?.name)?.why;
-  const why = aiWhy || target?.why;
+  const aiItem = aiPlan?.ordered_targets.find((t) => t.name === target?.name);
+  const why = aiItem?.why || target?.why;
+  const referenceImage = aiItem?.reference_image ?? null;
 
   return (
     <aside className={`target-card ${open ? "open" : ""}`} aria-hidden={!open}>
@@ -96,9 +97,27 @@ export function TargetCard({ target, aiPlan, predictedSeeing, onClose }: Props) 
             </div>
           )}
 
-          <div className="target-card__image-placeholder">
-            Reference image — coming soon
-          </div>
+          {referenceImage ? (
+            <div className="target-card__image">
+              <img
+                src={referenceImage.url}
+                alt={`${target.name} reference image`}
+                style={{
+                  width: "100%",
+                  aspectRatio: "1",
+                  objectFit: "cover",
+                  filter: "brightness(0.9) contrast(1.1)",
+                }}
+              />
+              <p style={{ fontSize: "10px", color: "#888680", marginTop: "4px" }}>
+                {referenceImage.source} · {target.name}
+              </p>
+            </div>
+          ) : (
+            <div className="target-card__image-placeholder">
+              No reference image available
+            </div>
+          )}
         </div>
       )}
     </aside>

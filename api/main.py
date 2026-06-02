@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from .agent.explainer import Explainer
 from .agent.planner import SessionPlanner
+from .integrations.mast import MASTClient
 from .integrations.weather import fetch_nightly_forecast, fetch_weather
 from .pipeline.catalog import SEED_CATALOG, fetch_targets, to_targets
 from .pipeline.seeing import NUM_SLOTS, SeeingPredictor
@@ -63,6 +64,7 @@ if FRONTEND_DIR.exists():
 _seeing = SeeingPredictor()
 _planner = SessionPlanner()
 _explainer = Explainer()
+_mast = MASTClient()
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +141,9 @@ async def api_plan_ai(req: PlanRequest):
             user_profile=None,
             mode=req.mode,
         )
-        base["ai_plan"] = result.to_dict()
+        ai_plan = result.to_dict()
+        await _attach_reference_images(ai_plan, base["targets"])
+        base["ai_plan"] = ai_plan
     except Exception as exc:  # missing key, OpenRouter outage, parse error
         base["ai_plan"] = {
             "ordered_targets": [],
@@ -148,6 +152,40 @@ async def api_plan_ai(req: PlanRequest):
             "error": str(exc),
         }
     return base
+
+
+async def _attach_reference_images(ai_plan: dict, scored_targets: list[dict]) -> None:
+    """Fetch SkyView reference images for the top targets in the plan and
+    attach ``reference_image`` ({url, source} | None) to each ordered target.
+
+    Claude's ordered targets carry a ``name`` but not coordinates, so we
+    join against the deterministic scored list to recover ra/dec.
+    """
+    ordered = ai_plan.get("ordered_targets") or []
+    if not ordered:
+        return
+
+    coords = {
+        t["name"]: (t.get("ra_deg"), t.get("dec_deg"))
+        for t in scored_targets
+        if t.get("name") is not None
+    }
+
+    top = ordered[:10]
+    batch_input = []
+    for t in top:
+        name = t.get("name")
+        ra, dec = coords.get(name, (None, None))
+        if name and ra is not None and dec is not None:
+            batch_input.append({"name": name, "ra_deg": ra, "dec_deg": dec})
+
+    images = await _mast.get_reference_images_batch(batch_input)
+
+    for t in ordered:
+        img = images.get(t.get("name"))
+        t["reference_image"] = (
+            {"url": img["url"], "source": img["source"]} if img else None
+        )
 
 
 class ExplainRequest(BaseModel):

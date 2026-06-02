@@ -50,12 +50,18 @@ export interface SeeingSlot {
   confidence: number;
 }
 
+export interface ReferenceImage {
+  url: string;
+  source: string;
+}
+
 export interface AIPlanItem {
   name: string;
   slot: string;
   object_type: string;
   why: string;
   seeing_at_slot: number;
+  reference_image?: ReferenceImage | null;
 }
 
 export interface AIPlan {
