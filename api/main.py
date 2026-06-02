@@ -256,6 +256,7 @@ async def _run_pipeline(req: PlanRequest) -> dict:
     targets = to_targets(catalog_rows) if catalog_rows else SEED_CATALOG
 
     scored = plan_session(obs, session, targets, gear=gear)
+    notice = None if scored else _empty_plan_reason(obs, session, targets)
 
     try:
         weather_history = await _weather_history_for_seeing(req.lat, req.lon)
@@ -282,7 +283,40 @@ async def _run_pipeline(req: PlanRequest) -> dict:
         "seeing_model_loaded": _seeing.has_model,
         "targets": [_scored_to_json(r) for r in scored],
         "catalog_source": "simbad" if catalog_rows else "seed",
+        "notice": notice,
     }
+
+
+def _empty_plan_reason(obs: Observer, session: Session, targets) -> str:
+    """Explain why a plan came back empty so the UI can show a real reason
+    instead of a blank list. Distinguishes three cases: no catalog, no
+    astronomical darkness in the window, or everything filtered out."""
+    if not targets:
+        return (
+            "No catalog targets matched your magnitude/size limits. Try a "
+            "larger aperture or a different observing mode."
+        )
+    from .pipeline.visibility import (
+        compute_sky,
+        location_for,
+        session_start,
+        time_grid,
+    )
+
+    loc = location_for(obs)
+    sky = compute_sky(time_grid(session_start(obs, session, loc), session), loc)
+    if not bool(sky.is_dark.any()):
+        return (
+            "No astronomical darkness during this window at this latitude and "
+            "date \u2014 e.g. high-latitude summer 'white nights'. Try a date "
+            "closer to winter, a lower latitude, or a longer session."
+        )
+    return (
+        "Targets were above the horizon but none cleared your filters "
+        "(minimum altitude, moon separation, or aperture limits). Try "
+        "lowering the minimum altitude, extending the session, or observing "
+        "on a darker (less moonlit) night."
+    )
 
 
 @app.get("/api/targets")

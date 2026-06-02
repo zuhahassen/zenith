@@ -97,6 +97,9 @@ export interface PlanResponse {
   seeing_model_loaded: boolean;
   targets: ScoredTarget[];
   catalog_source: "simbad" | "seed";
+  // Present when the plan is empty: a human-readable reason (no darkness,
+  // nothing above the horizon, or no catalog match). null when targets exist.
+  notice?: string | null;
   // Only present on /api/plan-ai. Always present in PlanResponse so
   // components can render it conditionally.
   ai_plan?: AIPlan;

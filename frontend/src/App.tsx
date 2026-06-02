@@ -76,6 +76,7 @@ function PlanView({ data, onReset, onSelect }: PlanViewProps) {
   const summary = data.ai_plan?.session_summary;
   const notes = data.ai_plan?.session_notes;
   const apiError = data.ai_plan?.error;
+  const isEmpty = data.targets.length === 0;
 
   return (
     <div className="plan-view">
@@ -101,11 +102,33 @@ function PlanView({ data, onReset, onSelect }: PlanViewProps) {
         </div>
       </div>
 
-      <SessionTimeline
-        targets={data.targets}
-        seeingForecast={data.seeing_forecast}
-        onSelectTarget={onSelect}
-      />
+      {isEmpty ? (
+        <div
+          style={{
+            margin: "0 32px 48px",
+            padding: "20px 24px",
+            maxWidth: 820,
+            border: "1px solid var(--border, #333)",
+            borderRadius: 8,
+            background: "rgba(217, 160, 80, 0.08)",
+            color: "var(--text-secondary)",
+            fontSize: 14,
+            lineHeight: 1.7,
+          }}
+        >
+          <div className="setup__label" style={{ marginBottom: 8 }}>
+            No targets for this plan
+          </div>
+          {data.notice ??
+            "No targets matched. Try a different date, location, or gear."}
+        </div>
+      ) : (
+        <SessionTimeline
+          targets={data.targets}
+          seeingForecast={data.seeing_forecast}
+          onSelectTarget={onSelect}
+        />
+      )}
 
       {notes && (
         <section
