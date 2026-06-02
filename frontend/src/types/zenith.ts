@@ -69,6 +69,7 @@ export interface AIPlan {
   session_summary: string;
   session_notes: string;
   error?: string;
+  error_type?: string;
 }
 
 export interface WeatherSnapshot {

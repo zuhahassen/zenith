@@ -17,6 +17,7 @@ the unprefixed shape the previous version exposed.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
@@ -26,6 +27,8 @@ from dotenv import load_dotenv
 # Load .env from the repo root before any module reads env vars. This is a
 # no-op in production where env vars come from systemd / Cloudflare.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -145,13 +148,32 @@ async def api_plan_ai(req: PlanRequest):
         await _attach_reference_images(ai_plan, base["targets"])
         base["ai_plan"] = ai_plan
     except Exception as exc:  # missing key, OpenRouter outage, parse error
+        logger.exception("AI planner failed")
         base["ai_plan"] = {
             "ordered_targets": [],
             "session_summary": "",
             "session_notes": "",
-            "error": str(exc),
+            "error": _describe_exc(exc),
+            "error_type": type(exc).__name__,
         }
     return base
+
+
+def _describe_exc(exc: Exception) -> str:
+    """Human-readable, debuggable description of an upstream failure.
+
+    The Anthropic SDK's APIConnectionError stringifies to a bare
+    "Connection error." which hides the real cause. Surface the exception
+    type plus any nested cause so the frontend/logs show something
+    actionable (e.g. the underlying httpx ConnectTimeout vs an HTTP 401).
+    """
+    name = type(exc).__name__
+    msg = str(exc).strip()
+    cause = exc.__cause__ or exc.__context__
+    detail = msg or name
+    if cause is not None and str(cause).strip() and str(cause) not in detail:
+        detail = f"{detail} (cause: {type(cause).__name__}: {cause})"
+    return f"{name}: {detail}" if msg and name not in detail else detail
 
 
 async def _attach_reference_images(ai_plan: dict, scored_targets: list[dict]) -> None:
