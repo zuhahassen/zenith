@@ -28,7 +28,10 @@ const CORS_HEADERS = {
   "Access-Control-Max-Age": "86400",
 };
 
-const PROXY_PREFIXES = ["/api/plan", "/api/targets", "/api/weather"];
+// Proxy everything under /api/ to the backend (health, plan, plan-ai,
+// explain, targets, weather). Per-route caching is still controlled by
+// CACHE_TTL below; uncached routes simply pass through.
+const PROXY_PREFIX = "/api/";
 
 export default {
   async fetch(request, env, ctx) {
@@ -38,7 +41,7 @@ export default {
 
     const url = new URL(request.url);
 
-    if (!PROXY_PREFIXES.some((p) => url.pathname.startsWith(p))) {
+    if (!url.pathname.startsWith(PROXY_PREFIX)) {
       return json({ error: "not found", path: url.pathname }, 404);
     }
 
