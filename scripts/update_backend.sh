@@ -6,13 +6,31 @@
 # because history was rewritten once (the wrangler.toml secret scrub), so a
 # fast-forward pull would diverge. Local uncommitted changes ARE discarded.
 #
-# Usage:  sudo bash scripts/update_backend.sh
+# Usage (on the droplet):   sudo bash scripts/update_backend.sh
+# Or piped from a laptop:   ssh root@HOST 'bash -s' < scripts/update_backend.sh
+#
+# Repo location is resolved in this order so both invocations work:
+#   1. $REPO_DIR env var, if set
+#   2. the systemd unit's WorkingDirectory (robust when piped over stdin,
+#      where $0 is just "bash" and the script path is unknown)
+#   3. the script's own location ($0), for the in-repo case
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -z "${REPO_DIR:-}" ]]; then
+  REPO_DIR="$(systemctl show -p WorkingDirectory --value zenith 2>/dev/null || true)"
+fi
+if [[ -z "${REPO_DIR:-}" || ! -d "${REPO_DIR}/.git" ]]; then
+  REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd || true)"
+fi
+if [[ -z "${REPO_DIR:-}" || ! -d "${REPO_DIR}/.git" ]]; then
+  echo "✗ Could not locate the Zenith repo. Set REPO_DIR=/path/to/zenith and retry." >&2
+  exit 1
+fi
+
 VENV_DIR="${REPO_DIR}/.venv"
 cd "$REPO_DIR"
+echo "Using repo: $REPO_DIR"
 
 log() { printf "\n\033[1;33m▸ %s\033[0m\n" "$*"; }
 
