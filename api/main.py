@@ -21,6 +21,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
+from dotenv import load_dotenv
+
+# Load .env from the repo root before any module reads env vars. This is a
+# no-op in production where env vars come from systemd / Cloudflare.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -294,20 +300,25 @@ def _mag_limit_for_aperture(aperture_mm: float) -> float:
 
 
 _OPEN_METEO_HOURLY_URL = "https://api.open-meteo.com/v1/forecast"
+# wind_u_10m / wind_v_10m are requested but not part of the standard
+# Open-Meteo forecast schema, so we derive them from speed + direction
+# below. Listing them is harmless (the API ignores unknown variables).
 _HOURLY_VARS = (
     "temperature_2m,relativehumidity_2m,dewpoint_2m,pressure_msl,"
-    "windspeed_10m,winddirection_10m,cloudcover"
+    "windspeed_10m,winddirection_10m,wind_u_10m,wind_v_10m,cloudcover"
 )
+_HISTORY_ENTRIES = 12  # last 12 hourly samples feeding the seeing features
 
 
 async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
-    """Pull the last ~6 hours of hourly weather from Open-Meteo.
+    """Pull recent hourly weather from Open-Meteo for the seeing predictor.
 
-    Returns rows matching the field names ``api.ml.features`` expects, so
-    the rolling-window stats (temp_mean_3h, wind_speed_delta_30m, …) get
-    real data instead of NaN. Open-Meteo's hourly endpoint is on a 1-hour
-    grid; the feature builder's time-based windows still work because they
-    bucket by timestamp rather than sample count.
+    Returns one dict per hour with the field names ``api.ml.features``
+    expects, so the rolling-window stats (temp_mean_3h,
+    wind_speed_delta_30m, …) get real data instead of NaN. Wind u/v
+    components are derived from speed + direction when the API doesn't
+    supply ``wind_u_10m``/``wind_v_10m`` directly (which it currently
+    doesn't), since ``features.py`` prefers u/v over speed+direction.
     """
     import httpx
 
@@ -337,20 +348,45 @@ async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
     for i, ts in enumerate(times):
         if ts > now_ts:
             continue  # don't feed forecast values into the predictor's history
+
+        speed = _safe_get(hourly, "windspeed_10m", i)
+        direction = _safe_get(hourly, "winddirection_10m", i)
+        u = _safe_get(hourly, "wind_u_10m", i)
+        v = _safe_get(hourly, "wind_v_10m", i)
+        if u is None or v is None:
+            u, v = _wind_components(speed, direction)
+
         rows.append({
             "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
             "temperature_2m": _safe_get(hourly, "temperature_2m", i),
             "relative_humidity_2m": _safe_get(hourly, "relativehumidity_2m", i),
             "dewpoint_2m": _safe_get(hourly, "dewpoint_2m", i),
             "pressure_msl": _safe_get(hourly, "pressure_msl", i),
-            "wind_speed_10m": _safe_get(hourly, "windspeed_10m", i),
-            "wind_direction_10m": _safe_get(hourly, "winddirection_10m", i),
+            "wind_speed_10m": speed,
+            "wind_direction_10m": direction,
+            "wind_u_10m": u,
+            "wind_v_10m": v,
             "cloud_cover": _safe_get(hourly, "cloudcover", i),
         })
 
-    # Last ~6 hours ending now. Hourly grid = 6 samples; the seeing
-    # predictor accepts variable-length histories.
-    return rows[-6:]
+    return rows[-_HISTORY_ENTRIES:]
+
+
+def _wind_components(speed, direction):
+    """Derive (u, v) m/s from meteorological speed + direction.
+
+    Direction is the bearing the wind blows FROM (Open-Meteo convention).
+    u is the eastward component, v the northward; both point in the
+    direction the wind is going TO, matching ``features._resolve_wind``.
+    """
+    import math
+
+    if speed is None or direction is None:
+        return None, None
+    rad = math.radians(direction)
+    u = -speed * math.sin(rad)
+    v = -speed * math.cos(rad)
+    return u, v
 
 
 def _safe_get(d: dict, key: str, i: int):
