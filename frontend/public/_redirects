@@ -1,4 +1,7 @@
-# Replace YOUR_WORKER_URL with your deployed worker URL before running wrangler pages deploy
-# Example: /api/*  https://zenith-api.zuha.workers.dev/:splat  200
-/api/*  https://YOUR_WORKER_URL/:splat  200
-/*      /index.html                     200
+# NOTE: We intentionally do NOT proxy /api/* here. Cloudflare Pages
+# _redirects rewrites to an external URL only proxy GET requests; POST
+# (used by /api/plan-ai and /api/explain) returns 405. The frontend instead
+# calls the Worker directly via VITE_API_BASE (see frontend/.env.production).
+#
+# SPA fallback: serve index.html for client-side routes.
+/* /index.html 200
