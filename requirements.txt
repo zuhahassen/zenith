@@ -19,6 +19,12 @@ xgboost>=2.0.0
 pandas>=2.0.0
 matplotlib>=3.7.0
 
+# ERA5 seeing-training data prep (api/ml/era5.py) — dev only, not needed
+# by the API server or the inference path (imported lazily).
+cdsapi>=0.7.0
+xarray>=2024.1.0
+netCDF4>=1.6.0
+
 # Web API
 fastapi>=0.95.0
 uvicorn[standard]>=0.22.0

@@ -15,13 +15,20 @@ The marginal seeing distribution is anchored to a log-normal with mean
 weather drivers above plus Gaussian noise so the model has a real signal to
 learn. Everything is seeded (42) for reproducibility.
 
-Run:
+Run (synthetic, default):
     python -m api.ml.train_xgb
     python -m api.ml.train_xgb --output /tmp/seeing_model.json
     python -m api.ml.train_xgb --n-samples 20000
 
-Replace the synthetic generator with ERA5 reanalysis once CDS credentials
-are configured (see api/ml/notebooks/seeing_eda.ipynb for the upgrade path).
+Run (ERA5 reanalysis): first build a cache with api/ml/era5.py, then:
+    python -m api.ml.era5 download --lat 31.96 --lon -111.6 \
+        --start 2023-01-01 --end 2023-03-31 --out data/era5.nc
+    python -m api.ml.era5 build --nc data/era5.nc --out data/era5.npz
+    python -m api.ml.train_xgb --source era5 --era5-cache data/era5.npz
+
+The ERA5 path derives the seeing label from the optical-turbulence profile of
+the reanalysis pressure levels (Cn^2 integral -> Fried parameter -> FWHM); see
+api/ml/era5.py for the physics.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
@@ -209,15 +217,35 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 
 
+def _load_dataset(
+    source: str,
+    n_samples: int,
+    seed: int,
+    era5_cache: Optional[str],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (X, y) from either the synthetic generator or an ERA5 cache."""
+    if source == "era5":
+        if not era5_cache:
+            raise SystemExit("--source era5 requires --era5-cache PATH (see api/ml/era5.py)")
+        from .era5 import load_dataset
+        print(f"Loading ERA5 dataset from {era5_cache} ...")
+        X, y = load_dataset(era5_cache)
+        print(f"Loaded {len(X)} ERA5 samples.")
+        return X, y
+    print(f"Generating {n_samples} synthetic samples (seed={seed})...")
+    return generate_synthetic_dataset(n_samples=n_samples, seed=seed)
+
+
 def train(
     output_path: Path = DEFAULT_MODEL_PATH,
     n_samples: int = N_SAMPLES,
     seed: int = SEED,
+    source: str = "synthetic",
+    era5_cache: Optional[str] = None,
 ) -> dict[str, float]:
     import xgboost as xgb
 
-    print(f"Generating {n_samples} synthetic samples (seed={seed})...")
-    X, y = generate_synthetic_dataset(n_samples=n_samples, seed=seed)
+    X, y = _load_dataset(source, n_samples, seed, era5_cache)
 
     # Chronological 80/20 split (no shuffle): the synthetic samples are
     # generated independently, but we honor the contract for when this is
@@ -282,9 +310,27 @@ def main() -> None:
         help="Number of synthetic training samples.",
     )
     parser.add_argument("--seed", type=int, default=SEED, help="RNG seed.")
+    parser.add_argument(
+        "--source",
+        choices=("synthetic", "era5"),
+        default="synthetic",
+        help="Training data source. 'era5' reads a cache built by api/ml/era5.py.",
+    )
+    parser.add_argument(
+        "--era5-cache",
+        type=str,
+        default=None,
+        help="Path to the .npz produced by `python -m api.ml.era5 build` (required for --source era5).",
+    )
     args = parser.parse_args()
 
-    train(output_path=Path(args.output), n_samples=args.n_samples, seed=args.seed)
+    train(
+        output_path=Path(args.output),
+        n_samples=args.n_samples,
+        seed=args.seed,
+        source=args.source,
+        era5_cache=args.era5_cache,
+    )
 
 
 if __name__ == "__main__":
