@@ -37,6 +37,7 @@ CLI (offline data prep):
 from __future__ import annotations
 
 import argparse
+import calendar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -54,9 +55,12 @@ CN2_COEFF = 2.8           # Tatarski structure-constant coefficient
 HISTORY_HOURS = 12        # surface history length per training sample
 SEEING_CLIP = (0.4, 5.0)  # arcsec, matches train_xgb fallback range
 
-# ERA5 pressure levels to request (hPa). Coarse but enough to integrate Cn2.
+# ERA5 pressure levels to request (hPa). Trimmed to a representative profile
+# that still resolves the boundary layer, free troposphere, and the
+# jet/tropopause region where optical turbulence peaks, while keeping each CDS
+# request under the per-request cost cap.
 PRESSURE_LEVELS = [
-    1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 70, 50,
+    1000, 850, 700, 500, 300, 250, 200, 150, 100,
 ]
 
 # ERA5 single-level variable name -> our weather-history key.
@@ -193,11 +197,20 @@ def download_era5(
     out_path: str,
     *,
     half_box_deg: float = 0.5,
+    skip_existing: bool = True,
+    hours: Optional[list[str]] = None,
 ) -> Path:
     """Download ERA5 single-level + pressure-level fields for a small box.
 
-    Requires a configured ``~/.cdsapirc`` (CDS API key). Writes one NetCDF
-    file containing both products. See https://cds.climate.copernicus.eu.
+    The CDS enforces a per-request cost cap, so a multi-year pull must be
+    chunked. We issue one request per calendar month and write per-month
+    NetCDF files alongside ``out_path``:
+
+        <stem>.<YYYYMM>.pl.nc   (pressure levels: T, z, u, v)
+        <stem>.<YYYYMM>.sl.nc   (single levels: surface fields)
+
+    Existing month files are skipped by default so an interrupted harvest can
+    resume. Requires a configured ``~/.cdsapirc``.
     """
     import cdsapi  # lazy: only needed for live download
 
@@ -206,46 +219,71 @@ def download_era5(
 
     d0 = datetime.fromisoformat(start)
     d1 = datetime.fromisoformat(end)
-    years = sorted({str(y) for y in range(d0.year, d1.year + 1)})
-    months = sorted({f"{m:02d}" for m in _month_range(d0, d1)})
-    days = [f"{d:02d}" for d in range(1, 32)]
-    # Nighttime-biased hours (UTC). Adjust per-site longitude as needed.
-    hours = [f"{h:02d}:00" for h in range(0, 24)]
+    if hours is None:
+        hours = [f"{h:02d}:00" for h in range(0, 24)]
     area = [lat + half_box_deg, lon - half_box_deg,
             lat - half_box_deg, lon + half_box_deg]  # N, W, S, E
 
     client = cdsapi.Client()
-    client.retrieve(
-        "reanalysis-era5-pressure-levels",
-        {
+    chunks = list(_week_chunks(d0, d1))
+    for idx, (year, month, chunk_days) in enumerate(chunks, start=1):
+        tag = f"{year}{month:02d}d{chunk_days[0]:02d}"
+        pl_file = out.with_name(f"{out.stem}.{tag}.pl.nc")
+        sl_file = out.with_name(f"{out.stem}.{tag}.sl.nc")
+        print(f"[{idx}/{len(chunks)}] ERA5 {tag} (days {chunk_days[0]}-{chunk_days[-1]}; "
+              f"pl exists={pl_file.exists()}, sl exists={sl_file.exists()})", flush=True)
+
+        common = {
             "product_type": "reanalysis",
-            "format": "netcdf",
-            "variable": ["temperature", "geopotential",
-                         "u_component_of_wind", "v_component_of_wind"],
-            "pressure_level": [str(p) for p in PRESSURE_LEVELS],
-            "year": years, "month": months, "day": days,
-            "time": hours, "area": area,
-        },
-        str(out.with_suffix(".pl.nc")),
-    )
-    client.retrieve(
-        "reanalysis-era5-single-levels",
-        {
-            "product_type": "reanalysis",
-            "format": "netcdf",
-            "variable": list(_SINGLE_LEVEL_MAP.keys()),
-            "year": years, "month": months, "day": days,
-            "time": hours, "area": area,
-        },
-        str(out.with_suffix(".sl.nc")),
-    )
+            "data_format": "netcdf",
+            "download_format": "unarchived",
+            "year": [str(year)], "month": [f"{month:02d}"],
+            "day": [f"{d:02d}" for d in chunk_days], "time": hours, "area": area,
+        }
+        if not (skip_existing and pl_file.exists()):
+            client.retrieve(
+                "reanalysis-era5-pressure-levels",
+                {**common,
+                 "variable": ["temperature", "geopotential",
+                              "u_component_of_wind", "v_component_of_wind"],
+                 "pressure_level": [str(p) for p in PRESSURE_LEVELS]},
+                str(pl_file),
+            )
+        if not (skip_existing and sl_file.exists()):
+            client.retrieve(
+                "reanalysis-era5-single-levels",
+                {**common, "variable": list(_SINGLE_LEVEL_MAP.keys())},
+                str(sl_file),
+            )
     return out
 
 
-def _month_range(d0: datetime, d1: datetime) -> list[int]:
-    if d0.year == d1.year:
-        return list(range(d0.month, d1.month + 1))
-    return list(range(1, 13))
+def _month_iter(d0: datetime, d1: datetime):
+    """Yield (year, month) tuples from d0 to d1 inclusive."""
+    y, m = d0.year, d0.month
+    while (y, m) <= (d1.year, d1.month):
+        yield y, m
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+
+def _week_chunks(d0: datetime, d1: datetime):
+    """Yield (year, month, [days]) in <=7-day windows clipped to month bounds.
+
+    Keeping each window inside a single calendar month lets the CDS request use
+    a simple (year, month, day-list) selection, and the ~7-day span keeps the
+    field count well under the per-request cost cap.
+    """
+    for year, month in _month_iter(d0, d1):
+        n_days = calendar.monthrange(year, month)[1]
+        first = d0.day if (year == d0.year and month == d0.month) else 1
+        last = d1.day if (year == d1.year and month == d1.month) else n_days
+        day = first
+        while day <= last:
+            yield year, month, list(range(day, min(day + 7, last + 1)))
+            day += 7
 
 
 # ---------------------------------------------------------------------------
@@ -263,51 +301,93 @@ def build_dataset(nc_basepath: str, out_path: str) -> tuple[np.ndarray, np.ndarr
 
     The result is saved as a compressed ``.npz`` with arrays ``X`` and ``y``.
     """
-    import xarray as xr  # lazy: only needed for offline prep
-
     base = Path(nc_basepath)
-    pl = xr.open_dataset(base.with_suffix(".pl.nc"))
-    sl = xr.open_dataset(base.with_suffix(".sl.nc"))
 
-    # Collapse the small spatial box to its center via mean over lat/lon.
-    spatial = [d for d in ("latitude", "longitude") if d in pl.dims]
-    pl = pl.mean(dim=spatial) if spatial else pl
-    spatial_sl = [d for d in ("latitude", "longitude") if d in sl.dims]
-    sl = sl.mean(dim=spatial_sl) if spatial_sl else sl
-
-    times = np.asarray(pl["time"].values)
-    levels = np.asarray(pl["level"].values, dtype=float)  # hPa
-
-    # Pre-extract single-level series as plain dicts keyed by timestamp.
-    sl_times = np.asarray(sl["time"].values)
-    sl_series = {our: np.asarray(sl[era].values).astype(float).ravel()
-                 for era, our in _SINGLE_LEVEL_MAP.items() if era in sl}
+    # Prefer per-month files written by the chunked downloader; fall back to a
+    # single legacy pair for backward compatibility.
+    pl_files = sorted(base.parent.glob(f"{base.stem}.*.pl.nc"))
+    if not pl_files and base.with_suffix(".pl.nc").exists():
+        pl_files = [base.with_suffix(".pl.nc")]
+    if not pl_files:
+        raise FileNotFoundError(f"No ERA5 pressure-level NetCDF found for base {base}")
 
     X_rows: list[np.ndarray] = []
     y_rows: list[float] = []
-
-    for ti, t in enumerate(times):
-        temp = np.asarray(pl["t"].isel(time=ti).values, dtype=float)
-        geo = np.asarray(pl["z"].isel(time=ti).values, dtype=float)
-        u = np.asarray(pl["u"].isel(time=ti).values, dtype=float)
-        v = np.asarray(pl["v"].isel(time=ti).values, dtype=float)
-        seeing = derive_seeing(levels, temp, geo, u, v)
-
-        history = _surface_history(sl_times, sl_series, t)
-        if not history:
+    for pl_file in pl_files:
+        sl_file = pl_file.with_name(pl_file.name.replace(".pl.nc", ".sl.nc"))
+        if not sl_file.exists():
+            print(f"  WARN: missing single-level pair for {pl_file.name}, skipping", flush=True)
             continue
-        X_rows.append(build_feature_vector(history))
-        y_rows.append(seeing)
+        rows, labels = _process_pair(pl_file, sl_file)
+        X_rows.extend(rows)
+        y_rows.extend(labels)
+        print(f"  {pl_file.name}: +{len(rows)} samples (total {len(X_rows)})", flush=True)
 
     X = np.asarray(X_rows, dtype=float)
     y = np.asarray(y_rows, dtype=float)
-    assert X.shape[1] == N_FEATURES, f"feature width mismatch: {X.shape}"
+    assert X.ndim == 2 and X.shape[1] == N_FEATURES, f"feature width mismatch: {X.shape}"
 
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, X=X, y=y)
     print(f"Built ERA5 dataset: {X.shape[0]} samples -> {out}")
     return X, y
+
+
+def _resolve_dim(ds, candidates: tuple[str, ...]) -> str:
+    """Return the first candidate that is a dim/coord of ``ds`` (CDS naming varies)."""
+    for name in candidates:
+        if name in ds.dims or name in ds.coords:
+            return name
+    raise KeyError(f"none of {candidates} found in dataset (have {list(ds.dims)})")
+
+
+def _process_pair(pl_file: Path, sl_file: Path) -> tuple[list[np.ndarray], list[float]]:
+    """Derive (feature rows, seeing labels) from one monthly pl/sl NetCDF pair."""
+    import xarray as xr  # lazy: only needed for offline prep
+
+    pl = xr.open_dataset(pl_file)
+    sl = xr.open_dataset(sl_file)
+
+    # Collapse the small spatial box to its center via mean over lat/lon.
+    pl_spatial = [d for d in ("latitude", "longitude") if d in pl.dims]
+    if pl_spatial:
+        pl = pl.mean(dim=pl_spatial)
+    sl_spatial = [d for d in ("latitude", "longitude") if d in sl.dims]
+    if sl_spatial:
+        sl = sl.mean(dim=sl_spatial)
+
+    # The new CDS-Beta uses 'valid_time' / 'pressure_level'; older exports use
+    # 'time' / 'level'. Resolve both.
+    pl_time = _resolve_dim(pl, ("valid_time", "time"))
+    level_dim = _resolve_dim(pl, ("pressure_level", "level"))
+    sl_time = _resolve_dim(sl, ("valid_time", "time"))
+
+    times = np.asarray(pl[pl_time].values)
+    levels = np.asarray(pl[level_dim].values, dtype=float)  # hPa
+
+    sl_times = np.asarray(sl[sl_time].values)
+    sl_series = {our: np.asarray(sl[era].values).astype(float).ravel()
+                 for era, our in _SINGLE_LEVEL_MAP.items() if era in sl}
+
+    rows: list[np.ndarray] = []
+    labels: list[float] = []
+    for ti, t in enumerate(times):
+        temp = np.asarray(pl["t"].isel({pl_time: ti}).values, dtype=float)
+        geo = np.asarray(pl["z"].isel({pl_time: ti}).values, dtype=float)
+        u = np.asarray(pl["u"].isel({pl_time: ti}).values, dtype=float)
+        v = np.asarray(pl["v"].isel({pl_time: ti}).values, dtype=float)
+        seeing = derive_seeing(levels, temp, geo, u, v)
+
+        history = _surface_history(sl_times, sl_series, t)
+        if not history:
+            continue
+        rows.append(build_feature_vector(history))
+        labels.append(seeing)
+
+    pl.close()
+    sl.close()
+    return rows, labels
 
 
 def _surface_history(sl_times: np.ndarray, sl_series: dict, t_end) -> list[dict]:

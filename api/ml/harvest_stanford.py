@@ -36,6 +36,12 @@ STANFORD_LON = -122.1697
 START_DATE = "2023-01-01"
 END_DATE = "2025-12-31"
 
+# Stanford is UTC-8 (PST) / UTC-7 (PDT), so local night (~18:00-06:00) maps to
+# roughly 02:00-14:00 UTC. We pull 00:00-15:00 UTC to cover the observing
+# window plus the trailing 12 h of surface history the feature vector needs,
+# while keeping each monthly CDS request comfortably under the cost cap.
+NIGHT_HOURS_UTC = [f"{h:02d}:00" for h in range(0, 16)]
+
 # Output layout. The NetCDF base path is used by era5.download_era5 to write
 # ``<base>.pl.nc`` and ``<base>.sl.nc``; build_dataset reads the same base.
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -63,6 +69,7 @@ def harvest() -> Path:
         start=START_DATE,
         end=END_DATE,
         out_path=str(NC_BASE),
+        hours=NIGHT_HOURS_UTC,
     )
     _log(f"Download complete in {time.time() - t0:.0f}s -> {NC_BASE}.[pl|sl].nc")
 
