@@ -231,7 +231,9 @@ zenith/
 | Multi-night target calendar   | Planned     | Forward scan of observability for a chosen target            |
 
 ## References
-
+- Ni, B. et al. (2022). *Data-driven seeing prediction for the LAMOST telescope.* — the 
+24-feature vector and tree-model approach in `api/ml/features.py` and `api/pipeline/seeing.
+py` follow this paper.
 - Tatarski, V. I. (1961). *Wave Propagation in a Turbulent Medium.* — the Cn^2 structure-constant formulation.
 - Dewan, E. M. et al. (1993). *A model for C_n^2 (optical turbulence) profiles using radiosonde data.* — the wind-shear outer-scale model.
 - Fried, D. L. (1966). *Optical resolution through a randomly inhomogeneous medium.* — the Fried parameter and seeing relation.
