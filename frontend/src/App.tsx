@@ -55,11 +55,12 @@ export default function App() {
               plan.reset();
             }}
             onSelect={setSelectedTarget}
+            selectedName={selectedTarget?.name ?? null}
           />
         )}
 
         {plan.isError && (
-          <div className="muted" style={{ padding: "0 32px", color: "#d97070" }}>
+          <div className="mono" style={{ padding: "0 32px", color: "var(--negative)" }}>
             {(plan.error as Error)?.message ?? "Plan request failed."}
           </div>
         )}
@@ -92,9 +93,10 @@ interface PlanViewProps {
   data: PlanResponse;
   onReset: () => void;
   onSelect: (t: ScoredTarget) => void;
+  selectedName: string | null;
 }
 
-function PlanView({ data, onReset, onSelect }: PlanViewProps) {
+function PlanView({ data, onReset, onSelect, selectedName }: PlanViewProps) {
   const summary = data.ai_plan?.session_summary;
   const notes = data.ai_plan?.session_notes;
   const apiError = data.ai_plan?.error;
@@ -112,7 +114,7 @@ function PlanView({ data, onReset, onSelect }: PlanViewProps) {
           </div>
           {summary && <div className="plan-view__summary">{summary}</div>}
           {apiError && (
-            <div className="plan-view__summary muted" style={{ color: "#d97070" }}>
+            <div className="plan-view__summary" style={{ color: "var(--negative)" }}>
               AI plan unavailable: {apiError} — deterministic ordering shown below.
             </div>
           )}
@@ -130,9 +132,9 @@ function PlanView({ data, onReset, onSelect }: PlanViewProps) {
             margin: "0 32px 48px",
             padding: "20px 24px",
             maxWidth: 820,
-            border: "1px solid var(--border, #333)",
-            borderRadius: 8,
-            background: "rgba(217, 160, 80, 0.08)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            background: "var(--accent-glow)",
             color: "var(--text-secondary)",
             fontSize: 14,
             lineHeight: 1.7,
@@ -152,6 +154,7 @@ function PlanView({ data, onReset, onSelect }: PlanViewProps) {
             onSelectTarget={onSelect}
             moonIllumination={data.moon_illumination}
             bortleClass={data.bortle_class}
+            selectedName={selectedName}
           />
         </Suspense>
       )}
