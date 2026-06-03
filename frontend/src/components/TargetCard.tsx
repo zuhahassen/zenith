@@ -202,8 +202,38 @@ export function TargetCard({
                   filter: "brightness(0.9) contrast(1.1)",
                 }}
               />
-              <p style={{ fontSize: "10px", color: "#888680", marginTop: "4px" }}>
-                {referenceImage.source} · {target.name}
+              <p
+                style={{
+                  fontSize: "10px",
+                  color: "#888680",
+                  marginTop: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                {(() => {
+                  const isHST = /hst|hubble|hla/i.test(referenceImage.source);
+                  return (
+                    <span
+                      style={{
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                        padding: "1px 5px",
+                        borderRadius: "3px",
+                        textTransform: "uppercase",
+                        color: isHST ? "#1a1a1a" : "#c4bfb8",
+                        background: isHST ? "#e8a045" : "transparent",
+                        border: isHST ? "none" : "1px solid #3a3a3a",
+                      }}
+                      title={referenceImage.source}
+                    >
+                      {isHST ? "Hubble" : "Survey"}
+                    </span>
+                  );
+                })()}
+                <span>{referenceImage.source} · {target.name}</span>
               </p>
             </div>
           ) : (
