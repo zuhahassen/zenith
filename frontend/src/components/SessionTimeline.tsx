@@ -11,17 +11,45 @@ import {
   YAxis,
 } from "recharts";
 import { format } from "date-fns";
+import { Telescope } from "lucide-react";
 import type { ScoredTarget, SeeingSlot } from "../types/zenith";
 
+// Palette mirrors the CSS custom properties in index.css. SVG presentation
+// attributes don't resolve var(), so we keep literal hex here in sync.
+const C = {
+  accent: "#4a9eff",
+  galaxy: "#4a9eff",
+  nebula: "#36c9c6",
+  globular: "#e8edf5",
+  open: "#6b8fa8",
+  other: "#2a3a4a",
+  seeingGood: "#36c9c6",
+  seeingAvg: "#4a9eff",
+  seeingPoor: "#4a5568",
+  border: "#1a2535",
+  borderBright: "#2a3f5a",
+  textSecondary: "#7a8899",
+  textTertiary: "#4a5568",
+  textMono: "#a8c0d6",
+  textPrimary: "#e8edf5",
+  surface: "#111820",
+};
+
 const KIND_COLORS: Record<string, string> = {
-  Galaxy: "#e8a045",
-  Nebula: "#c4bfb8",
-  GlCl: "#f0ede8",
-  OpenCl: "#888680",
+  Galaxy: C.galaxy,
+  Nebula: C.nebula,
+  GlCl: C.globular,
+  OpenCl: C.open,
 };
 
 function colorForKind(kind: string): string {
-  return KIND_COLORS[kind] ?? "#3a3a3a";
+  return KIND_COLORS[kind] ?? C.other;
+}
+
+function seeingColor(value: number): string {
+  if (value < 1.5) return C.seeingGood;
+  if (value <= 2.5) return C.seeingAvg;
+  return C.seeingPoor;
 }
 
 interface Props {
@@ -30,15 +58,13 @@ interface Props {
   onSelectTarget: (t: ScoredTarget) => void;
   moonIllumination?: number | null;
   bortleClass?: number;
+  selectedName?: string | null;
 }
 
-// Internal recharts row shape. One row per target, plus an extra "axis row"
-// at the top for the seeing line so recharts knows the time domain.
 interface Row {
   name: string;
   kind: string;
-  range?: [number, number]; // [startMs, endMs] — recharts renders this as a horizontal bar
-  // Seeing line uses a separate dataset to avoid stretching the category axis.
+  range?: [number, number];
   ref?: ScoredTarget;
 }
 
@@ -48,9 +74,8 @@ export function SessionTimeline({
   onSelectTarget,
   moonIllumination,
   bortleClass,
+  selectedName,
 }: Props) {
-  // Chronological order: read the timeline left-to-right by start time, not
-  // by score.
   const visible = useMemo(
     () =>
       targets
@@ -65,7 +90,6 @@ export function SessionTimeline({
     [targets],
   );
 
-  // "Now" indicator, refreshed each minute.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
@@ -76,6 +100,12 @@ export function SessionTimeline({
     const vals = seeingForecast.map((s) => s.predicted_seeing_arcsec).filter((v) => v > 0);
     if (!vals.length) return null;
     return { min: Math.min(...vals), max: Math.max(...vals) };
+  }, [seeingForecast]);
+
+  const meanSeeing = useMemo(() => {
+    const vals = seeingForecast.map((s) => s.predicted_seeing_arcsec).filter((v) => v > 0);
+    if (!vals.length) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
   }, [seeingForecast]);
 
   const rows: Row[] = useMemo(
@@ -101,50 +131,51 @@ export function SessionTimeline({
     [seeingForecast],
   );
 
-  // Compute shared time domain so both charts align edge-to-edge.
   const { domain, ticks } = useMemo(() => computeDomain(rows, seeingData), [rows, seeingData]);
 
   if (!visible.length) {
     return (
-      <div className="muted" style={{ padding: 32 }}>
-        Nothing visible during the requested window.
+      <div className="timeline">
+        <div className="timeline__empty">
+          <Telescope size={32} strokeWidth={1.25} />
+          <div>No targets visible tonight for this location and aperture.</div>
+        </div>
       </div>
     );
   }
 
   const nowInDomain = now >= domain[0] && now <= domain[1];
+  const lineColor = meanSeeing != null ? seeingColor(meanSeeing) : C.accent;
 
   return (
     <div className="timeline">
       <div className="timeline__heading">
         <h2>Session timeline</h2>
-        <div className="muted mono" style={{ fontSize: 11 }}>
+        <div className="mono" style={{ fontSize: 11, color: C.textTertiary }}>
           {format(domain[0], "HH:mm")} → {format(domain[1], "HH:mm")} UTC
         </div>
       </div>
 
-      {/* Summary bar — one monospace row of session-level stats. */}
-      <div
-        className="mono"
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 16,
-          fontSize: 11,
-          color: "#888680",
-          padding: "0 32px 12px 80px",
-        }}
-      >
-        <span>{visible.length} targets</span>
-        {seeingRange && (
-          <span>
+      {/* Session summary bar — divider-separated stats. */}
+      <div className="session-summary">
+        <span className="session-summary__stat">{visible.length} targets</span>
+        {seeingRange && meanSeeing != null && (
+          <span className="session-summary__stat">
+            <span
+              className="session-summary__dot"
+              style={{ background: seeingColor(meanSeeing) }}
+            />
             seeing {seeingRange.min.toFixed(1)}–{seeingRange.max.toFixed(1)}″
           </span>
         )}
         {moonIllumination != null && (
-          <span>moon {(moonIllumination * 100).toFixed(0)}%</span>
+          <span className="session-summary__stat">
+            moon {(moonIllumination * 100).toFixed(0)}%
+          </span>
         )}
-        {bortleClass != null && <span>Bortle {bortleClass}</span>}
+        {bortleClass != null && (
+          <span className="session-summary__stat">Bortle {bortleClass}</span>
+        )}
       </div>
 
       <div className="timeline__chart" style={{ height: 32 + visible.length * 26 }}>
@@ -154,20 +185,14 @@ export function SessionTimeline({
             layout="vertical"
             margin={{ top: 24, right: 32, bottom: 8, left: 80 }}
           >
-            <CartesianGrid stroke="#1a1a1a" horizontal={false} />
+            <CartesianGrid stroke={C.border} horizontal={false} />
             {nowInDomain && (
               <ReferenceLine
                 x={now}
-                stroke="#e8a045"
-                strokeWidth={1.25}
+                stroke={C.accent}
+                strokeWidth={1}
                 ifOverflow="extendDomain"
-                label={{
-                  value: "now",
-                  position: "top",
-                  fill: "#e8a045",
-                  fontSize: 10,
-                  fontFamily: "ui-monospace",
-                }}
+                label={<NowLabel />}
               />
             )}
             <XAxis
@@ -175,20 +200,17 @@ export function SessionTimeline({
               domain={domain}
               ticks={ticks}
               tickFormatter={(v) => format(v as number, "HH:mm")}
-              stroke="#2a2a2a"
-              tick={{ fill: "#888680", fontSize: 11, fontFamily: "ui-monospace" }}
+              stroke={C.border}
+              tick={{ fill: C.textTertiary, fontSize: 11, fontFamily: "ui-monospace" }}
             />
             <YAxis
               type="category"
               dataKey="name"
-              stroke="#2a2a2a"
-              tick={{ fill: "#888680", fontSize: 11, fontFamily: "ui-monospace" }}
+              stroke={C.border}
+              tick={{ fill: C.textSecondary, fontSize: 11, fontFamily: "ui-monospace" }}
               width={72}
             />
-            <Tooltip
-              cursor={{ fill: "rgba(232,160,69,0.05)" }}
-              content={<TimelineTooltip />}
-            />
+            <Tooltip cursor={{ fill: "rgba(74,158,255,0.06)" }} content={<TimelineTooltip />} />
             <Bar
               dataKey="range"
               barSize={14}
@@ -197,17 +219,16 @@ export function SessionTimeline({
                 const ref = (d as { payload?: Row }).payload?.ref;
                 if (ref) onSelectTarget(ref);
               }}
-              shape={(props: unknown) => <KindBar {...(props as KindBarProps)} />}
+              shape={(props: unknown) => (
+                <KindBar {...(props as KindBarProps)} selectedName={selectedName} />
+              )}
             />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Seeing overlay as a separate sparkline-style chart sharing the X domain. */}
-      <div
-        className="timeline__chart"
-        style={{ height: 64, marginTop: 8, borderTop: "none" }}
-      >
+      {/* Seeing overlay — dashed, quality-coloured sparkline sharing the X domain. */}
+      <div className="timeline__chart" style={{ height: 64, marginTop: 8, borderTop: "none" }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={seeingData} margin={{ top: 12, right: 32, bottom: 8, left: 80 }}>
             <XAxis
@@ -216,25 +237,25 @@ export function SessionTimeline({
               domain={domain}
               ticks={ticks}
               tickFormatter={(v) => format(v as number, "HH:mm")}
-              stroke="#2a2a2a"
-              tick={{ fill: "#888680", fontSize: 10, fontFamily: "ui-monospace" }}
+              stroke={C.border}
+              tick={{ fill: C.textTertiary, fontSize: 10, fontFamily: "ui-monospace" }}
             />
-            <YAxis
-              hide
-              domain={[0.5, 4]}
-              reversed
-            />
+            <YAxis hide domain={[0.5, 4]} reversed />
             <Line
               type="monotone"
               dataKey="seeing"
-              stroke="#e8a045"
-              strokeWidth={1.25}
+              stroke={lineColor}
+              strokeWidth={1.5}
+              strokeDasharray="4 2"
               dot={false}
               isAnimationActive={false}
             />
           </ComposedChart>
         </ResponsiveContainer>
-        <div className="muted mono" style={{ fontSize: 11, padding: "0 32px 8px 80px" }}>
+        <div
+          className="mono"
+          style={{ fontSize: 11, color: C.textTertiary, padding: "0 32px 8px 80px" }}
+        >
           Seeing (arcsec) — lower is better
         </div>
       </div>
@@ -243,7 +264,34 @@ export function SessionTimeline({
 }
 
 // ---------------------------------------------------------------------------
-// Custom bar shape: paints the bar in the kind's color.
+// "NOW" indicator label: small upward triangle + mono caption.
+// ---------------------------------------------------------------------------
+
+function NowLabel(props: unknown) {
+  const { viewBox } = props as { viewBox?: { x: number; y: number } };
+  if (!viewBox) return null;
+  const { x, y } = viewBox;
+  return (
+    <g>
+      <path d={`M ${x} ${y - 2} l -4 6 l 8 0 z`} fill={C.accent} />
+      <text
+        x={x}
+        y={y - 5}
+        textAnchor="middle"
+        fill={C.accent}
+        fontSize={9}
+        fontFamily="ui-monospace"
+        letterSpacing="0.1em"
+      >
+        NOW
+      </text>
+    </g>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Custom bar shape: paints the bar in the kind's colour; selected gets an
+// accent left border and brighter fill.
 // ---------------------------------------------------------------------------
 
 interface KindBarProps {
@@ -252,19 +300,26 @@ interface KindBarProps {
   width: number;
   height: number;
   payload?: Row;
+  selectedName?: string | null;
 }
 
-function KindBar({ x, y, width, height, payload }: KindBarProps) {
+function KindBar({ x, y, width, height, payload, selectedName }: KindBarProps) {
   if (width <= 0 || !payload) return null;
+  const selected = selectedName != null && payload.name === selectedName;
+  const fill = colorForKind(payload.kind);
   return (
-    <rect
-      x={x}
-      y={y}
-      width={width}
-      height={height}
-      fill={colorForKind(payload.kind)}
-      style={{ cursor: "pointer" }}
-    />
+    <g style={{ cursor: "pointer" }}>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={fill}
+        opacity={selected ? 1 : 0.82}
+        rx={1}
+      />
+      {selected && <rect x={x} y={y} width={2} height={height} fill={C.accent} />}
+    </g>
   );
 }
 
@@ -284,25 +339,26 @@ function TimelineTooltip({ active, payload }: { active?: boolean; payload?: Tool
   return (
     <div
       style={{
-        background: "#111",
-        border: "1px solid #2a2a2a",
+        background: C.surface,
+        border: `1px solid ${C.borderBright}`,
+        borderRadius: 3,
         padding: "10px 14px",
         fontSize: 12,
-        color: "#f0ede8",
+        color: C.textPrimary,
         fontFamily: "ui-monospace",
         lineHeight: 1.6,
         minWidth: 200,
       }}
     >
-      <div style={{ color: "#e8a045", letterSpacing: "0.04em" }}>{t.name}</div>
-      <div style={{ color: "#888680", fontSize: 11, textTransform: "uppercase" }}>
+      <div style={{ color: C.accent, letterSpacing: "0.04em" }}>{t.name}</div>
+      <div style={{ color: C.textSecondary, fontSize: 11, textTransform: "uppercase" }}>
         {t.kind}
         {t.common_name ? ` — ${t.common_name}` : ""}
       </div>
-      <div style={{ marginTop: 6 }}>
+      <div style={{ marginTop: 6, color: C.textMono }}>
         peak {t.max_alt_deg.toFixed(0)}° · airmass {t.min_airmass.toFixed(2)}
       </div>
-      <div style={{ color: "#888680" }}>moon {t.moon_sep_deg.toFixed(0)}° away</div>
+      <div style={{ color: C.textSecondary }}>moon {t.moon_sep_deg.toFixed(0)}° away</div>
     </div>
   );
 }
@@ -328,7 +384,6 @@ function computeDomain(rows: Row[], seeing: { ts: number }[]) {
   const min = Math.min(...points);
   const max = Math.max(...points);
 
-  // Round to whole hours.
   const start = Math.floor(min / 3600_000) * 3600_000;
   const end = Math.ceil(max / 3600_000) * 3600_000;
 
