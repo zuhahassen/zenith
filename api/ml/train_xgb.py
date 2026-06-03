@@ -285,10 +285,13 @@ def train(
     # interval consumed by api/pipeline/seeing.py. Column order of the
     # prediction matches QUANTILES.
     params = {
-        "max_depth": 5,
-        "eta": 0.05,             # learning_rate
+        "max_depth": 4,
+        "eta": 0.03,             # learning_rate
         "subsample": 0.8,
         "colsample_bytree": 0.8,
+        "min_child_weight": 8,   # damp leaf overfit so quantile spread stays honest
+        "lambda": 3.0,           # L2 regularization
+        "gamma": 0.1,            # min split loss
         "objective": "reg:quantileerror",
         "quantile_alpha": np.array(QUANTILES),
         "seed": seed,
@@ -296,8 +299,9 @@ def train(
     booster = xgb.train(
         params,
         dtrain,
-        num_boost_round=300,     # n_estimators
+        num_boost_round=800,     # upper bound; early stopping picks the best round
         evals=[(dtrain, "train"), (dval, "val")],
+        early_stopping_rounds=40,
         verbose_eval=False,
     )
 

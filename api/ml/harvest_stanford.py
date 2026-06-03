@@ -36,11 +36,14 @@ STANFORD_LON = -122.1697
 START_DATE = "2023-01-01"
 END_DATE = "2025-12-31"
 
-# Stanford is UTC-8 (PST) / UTC-7 (PDT), so local night (~18:00-06:00) maps to
-# roughly 02:00-14:00 UTC. We pull 00:00-15:00 UTC to cover the observing
-# window plus the trailing 12 h of surface history the feature vector needs,
-# while keeping each monthly CDS request comfortably under the cost cap.
-NIGHT_HOURS_UTC = [f"{h:02d}:00" for h in range(0, 16)]
+# Pressure-level profiles are only needed at night (the seeing label times).
+# Stanford is UTC-8/-7, so 06:00 & 12:00 UTC map to ~22:00 and ~04:00 local --
+# two deep-night profiles per day. Sampling just these hours lets each CDS
+# pressure-level request span a multi-month block under the cost cap. Surface
+# fields are pulled hourly (full day) from the fast timeseries dataset, so the
+# 12 h rolling-history features are unaffected.
+PRESSURE_HOURS_UTC = ["06:00", "12:00"]
+MONTHS_PER_CHUNK = 3
 
 # Output layout. The NetCDF base path is used by era5.download_era5 to write
 # ``<base>.pl.nc`` and ``<base>.sl.nc``; build_dataset reads the same base.
@@ -69,7 +72,8 @@ def harvest() -> Path:
         start=START_DATE,
         end=END_DATE,
         out_path=str(NC_BASE),
-        hours=NIGHT_HOURS_UTC,
+        pressure_hours=PRESSURE_HOURS_UTC,
+        months_per_chunk=MONTHS_PER_CHUNK,
     )
     _log(f"Download complete in {time.time() - t0:.0f}s -> {NC_BASE}.[pl|sl].nc")
 
