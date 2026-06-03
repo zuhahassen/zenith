@@ -419,6 +419,14 @@ def _process_pressure_file(pl_file: Path, sl_times: np.ndarray,
     times = np.asarray(pl[pl_time].values)
     levels = np.asarray(pl[level_dim].values, dtype=float)  # hPa
 
+    # Map each requested standard level (hPa) to its index in the profile so
+    # the pressure-level features can be read off by name.
+    level_idx = {int(round(lv)): i for i, lv in enumerate(levels)}
+
+    def _at(level: int, arr: np.ndarray) -> float:
+        i = level_idx.get(level)
+        return float(arr[i]) if i is not None and i < arr.size else float("nan")
+
     rows: list[np.ndarray] = []
     labels: list[float] = []
     for ti, t in enumerate(times):
@@ -431,6 +439,17 @@ def _process_pressure_file(pl_file: Path, sl_times: np.ndarray,
         history = _surface_history(sl_times, sl_series, t)
         if not history:
             continue
+        # Attach upper-air structure to the profile-time sample so
+        # features.build_feature_vector can compute the pressure-level shear
+        # and stability features. Temperatures stay in kelvin; the stability
+        # feature is a difference, so the K/degC offset cancels.
+        last = history[-1]
+        for lv in (850, 300, 500, 200):
+            last[f"wind_u_{lv}"] = _at(lv, u)
+            last[f"wind_v_{lv}"] = _at(lv, v)
+        last["temp_850"] = _at(850, temp)
+        last["temp_500"] = _at(500, temp)
+
         rows.append(build_feature_vector(history))
         labels.append(seeing)
 

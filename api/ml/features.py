@@ -59,6 +59,12 @@ FEATURE_NAMES: tuple[str, ...] = (
     "hour_of_night_cos",
     "day_of_year_sin",
     "day_of_year_cos",
+    # Pressure-level structure (ERA5 only; NaN at inference when the live
+    # weather feed lacks upper-air profiles). Wind shear between standard
+    # levels is the dominant free-atmosphere optical-turbulence driver.
+    "wind_shear_850_300",   # |V(850hPa) - V(300hPa)|, m/s
+    "wind_shear_500_200",   # |V(500hPa) - V(200hPa)|, jet-stream level, m/s
+    "tropopause_stability",  # T(500hPa) - T(850hPa), atmospheric-stability proxy
 )
 
 N_FEATURES = len(FEATURE_NAMES)
@@ -134,6 +140,9 @@ def build_feature_vector(weather_history: list[dict]) -> np.ndarray:
     hour_sin, hour_cos = _cyclic_encode(_hour_of_night(t_now), period=24.0)
     doy_sin, doy_cos   = _cyclic_encode(_day_of_year(t_now), period=365.25)
 
+    # --- pressure-level structure (ERA5 only; NaN-safe) -------------------
+    shear_850_300, shear_500_200, tropo_stability = _pressure_level_features(current)
+
     vec = np.array([
         temp,
         dewpoint_depression,
@@ -151,6 +160,7 @@ def build_feature_vector(weather_history: list[dict]) -> np.ndarray:
         wind_delta_30m,
         hour_sin, hour_cos,
         doy_sin,  doy_cos,
+        shear_850_300, shear_500_200, tropo_stability,
     ], dtype=float)
 
     assert vec.shape == (N_FEATURES,), f"feature vector shape mismatch: {vec.shape}"
@@ -235,6 +245,34 @@ def _resolve_wind(sample: dict) -> tuple[float, float, float]:
         return speed, np.nan, np.nan
     theta = math.radians(direction)
     return speed, math.sin(theta), math.cos(theta)
+
+
+def _level_wind(sample: dict, level: int) -> tuple[float, float]:
+    """(u, v) m/s at a pressure ``level`` (hPa), from ``wind_u_<lvl>`` keys."""
+    return _f(sample.get(f"wind_u_{level}")), _f(sample.get(f"wind_v_{level}"))
+
+
+def _shear(sample: dict, lo: int, hi: int) -> float:
+    """Magnitude of the wind-vector difference between two pressure levels.
+
+    ``sqrt((u_lo - u_hi)^2 + (v_lo - v_hi)^2)``. NaN if either level is absent
+    (the live inference feed has no upper-air profile; XGBoost handles NaN).
+    """
+    u_lo, v_lo = _level_wind(sample, lo)
+    u_hi, v_hi = _level_wind(sample, hi)
+    if _isnan(u_lo) or _isnan(v_lo) or _isnan(u_hi) or _isnan(v_hi):
+        return np.nan
+    return float(math.hypot(u_lo - u_hi, v_lo - v_hi))
+
+
+def _pressure_level_features(sample: dict) -> tuple[float, float, float]:
+    """Wind shear 850->300, 500->200, and 500-850 hPa stability. All NaN-safe."""
+    shear_850_300 = _shear(sample, 850, 300)
+    shear_500_200 = _shear(sample, 500, 200)
+    t500 = _f(sample.get("temp_500"))
+    t850 = _f(sample.get("temp_850"))
+    tropo_stability = (t500 - t850) if not (_isnan(t500) or _isnan(t850)) else np.nan
+    return shear_850_300, shear_500_200, tropo_stability
 
 
 def _normalize_cloud(value: Any) -> float:
