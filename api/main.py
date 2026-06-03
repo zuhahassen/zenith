@@ -465,6 +465,17 @@ _HOURLY_VARS = (
     "temperature_2m,relativehumidity_2m,dewpoint_2m,pressure_msl,"
     "windspeed_10m,winddirection_10m,wind_u_10m,wind_v_10m,cloudcover"
 )
+# Pressure-level (upper-air) fields. Open-Meteo's free forecast endpoint
+# exposes these via the ``_<level>hPa`` suffix in ``hourly`` and reports wind
+# as speed + direction (no u/v), so we derive components with
+# ``_wind_components`` just like the surface wind. Populating these activates
+# the multi-site model's two highest-gain features (wind_shear_850_300 and
+# tropopause_stability), which were always NaN at inference before.
+_PRESSURE_LEVELS = (850, 500, 300, 200)
+_PRESSURE_LEVEL_VARS = ",".join(
+    f"temperature_{lvl}hPa,windspeed_{lvl}hPa,winddirection_{lvl}hPa"
+    for lvl in _PRESSURE_LEVELS
+)
 # The seeing predictor needs two things from this window:
 #   * a few hours of PAST weather so the rolling-window features
 #     (temp_mean_3h, wind_speed_delta_30m, ...) have real data, and
@@ -512,7 +523,7 @@ async def _weather_history_for_seeing(
     params = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": _HOURLY_VARS,
+        "hourly": _HOURLY_VARS + "," + _PRESSURE_LEVEL_VARS,
         "past_days": 1,
         "forecast_days": 2,
         "timeformat": "unixtime",
@@ -546,7 +557,7 @@ async def _weather_history_for_seeing(
         if u is None or v is None:
             u, v = _wind_components(speed, direction)
 
-        rows.append({
+        row = {
             "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
             "temperature_2m": _safe_get(hourly, "temperature_2m", i),
             "relative_humidity_2m": _safe_get(hourly, "relativehumidity_2m", i),
@@ -562,7 +573,24 @@ async def _weather_history_for_seeing(
             # to condition on which observatory it is predicting for.
             "site_lat": lat,
             "site_lon": lon,
-        })
+        }
+
+        # Upper-air profile. Open-Meteo gives wind as speed + direction at each
+        # pressure level, so derive (u, v) the same way as the surface wind and
+        # expose them under the ``wind_u_<lvl>`` / ``wind_v_<lvl>`` keys that
+        # ``features._level_wind`` reads. ``temp_500`` / ``temp_850`` feed the
+        # tropopause-stability feature. These are real values now instead of the
+        # NaN the live feed produced before, activating wind_shear_850_300 and
+        # tropopause_stability (the multi-site model's two highest-gain features).
+        for lvl in _PRESSURE_LEVELS:
+            lvl_speed = _safe_get(hourly, f"windspeed_{lvl}hPa", i)
+            lvl_dir = _safe_get(hourly, f"winddirection_{lvl}hPa", i)
+            lvl_u, lvl_v = _wind_components(lvl_speed, lvl_dir)
+            row[f"wind_u_{lvl}"] = lvl_u
+            row[f"wind_v_{lvl}"] = lvl_v
+            row[f"temp_{lvl}"] = _safe_get(hourly, f"temperature_{lvl}hPa", i)
+
+        rows.append(row)
 
     return rows
 
