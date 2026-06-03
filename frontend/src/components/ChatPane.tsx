@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowUp, Send } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { useExplainer } from "../hooks/useExplainer";
 import type { ChatMessage } from "../types/zenith";
 
@@ -40,48 +40,55 @@ export function ChatPane({ planContext }: Props) {
   return (
     <div className={`chat-pane ${open ? "open" : "collapsed"}`}>
       <div className="chat-pane__bar" onClick={() => setOpen((o) => !o)}>
-        <span>Ask about your session</span>
-        <ArrowUp size={14} style={{ transform: open ? "rotate(180deg)" : "none" }} />
+        <span className="chat-pane__bar-left">
+          <Terminal size={14} />
+          Session Q&amp;A
+        </span>
+        <span className="chat-pane__bar-right">{open ? "↓ collapse" : "↑ expand"}</span>
       </div>
 
       {open && (
         <div className="chat-pane__body">
           <div className="chat-pane__messages">
             {messages.length === 0 && (
-              <div className="muted" style={{ fontSize: 12 }}>
+              <div className="chat-msg chat-msg--assistant">
                 Ask anything about tonight's plan — alternative targets, observing tips, why one
                 object scored higher than another.
               </div>
             )}
             {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`chat-msg chat-msg--${m.role}`}
-              >
+              <div key={i} className={`chat-msg chat-msg--${m.role}`}>
                 {m.content}
               </div>
             ))}
             {explainer.isPending && (
-              <div className="chat-msg chat-msg--assistant muted">…</div>
+              <div className="chat-msg chat-msg--assistant">
+                <span className="typing">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </div>
             )}
           </div>
 
-          <div className="chat-pane__input-row">
-            <input
-              type="text"
-              placeholder="What should I look at first?"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
-            <button onClick={send} disabled={!draft.trim() || explainer.isPending} aria-label="Send">
-              <Send size={14} />
-            </button>
+          <div className="chat-pane__input-wrap">
+            <div className="chat-pane__input-row">
+              <span className="chat-pane__prompt">&gt;_</span>
+              <input
+                type="text"
+                placeholder="ask about your session"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+              />
+            </div>
+            <div className="chat-pane__inputhint">enter to send · shift+enter for newline</div>
           </div>
         </div>
       )}
