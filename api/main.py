@@ -17,9 +17,11 @@ the unprefixed shape the previous version exposed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from statistics import median
 from typing import Literal, Optional
 
 from dotenv import load_dotenv
@@ -120,6 +122,24 @@ class PlanRequest(BaseModel):
 
     # Optional knobs that mirror the legacy /plan contract.
     elevation_m: float = 0.0
+    duration_hours: float = 4.0
+    min_alt_deg: float = 25.0
+
+
+class CompareSite(BaseModel):
+    label: str = Field(..., description="Human label, e.g. 'Mount Tamalpais'")
+    lat: float
+    lon: float
+
+
+class CompareSitesRequest(BaseModel):
+    """Compare 2–5 candidate observing sites for the same night."""
+
+    sites: list[CompareSite] = Field(..., min_length=2, max_length=5)
+    aperture_mm: float = Field(150.0, gt=0)
+    mode: Mode = Field("observer")
+    date: Optional[datetime] = Field(default=None)
+    catalog_filter: Optional[str] = Field(default=None)
     duration_hours: float = 4.0
     min_alt_deg: float = 25.0
 
@@ -265,6 +285,216 @@ async def api_explain(req: ExplainRequest):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"explainer error: {exc}")
     return {"answer": answer}
+
+
+# ---------------------------------------------------------------------------
+# Site comparison
+# ---------------------------------------------------------------------------
+#
+# Composite-score weights. Darkness dominates (it's the single biggest driver of
+# what a visual observer can see), then weather (a cloudy dark site beats
+# nothing but loses to a clear suburban one), then atmospheric seeing, then the
+# raw count of well-placed targets. Weights sum to 1.0.
+_COMPARE_WEIGHTS = {
+    "darkness": 0.40,
+    "weather": 0.30,
+    "seeing": 0.20,
+    "targets": 0.10,
+}
+# Seeing (arcsec FWHM) mapped linearly to a 0–1 score between these anchors.
+_SEEING_BEST_ARCSEC = 1.0   # excellent -> score 1.0
+_SEEING_WORST_ARCSEC = 3.5  # poor      -> score 0.0
+# Target count mapped linearly to 0–1; this many well-placed objects saturates.
+_TARGET_COUNT_FULL = 25
+
+
+@app.post("/api/compare-sites")
+async def api_compare_sites(req: CompareSitesRequest) -> dict:
+    """Score and rank 2–5 candidate sites for the same night.
+
+    Runs the full deterministic pipeline (catalog → visibility → seeing →
+    weather) for every site concurrently, derives a transparent composite score
+    per site, and returns them ranked best-first plus a one-sentence
+    recommendation (Claude when configured, deterministic otherwise).
+    """
+    plan_reqs = [
+        PlanRequest(
+            lat=s.lat,
+            lon=s.lon,
+            aperture_mm=req.aperture_mm,
+            mode=req.mode,
+            date=req.date,
+            catalog_filter=req.catalog_filter,
+            duration_hours=req.duration_hours,
+            min_alt_deg=req.min_alt_deg,
+        )
+        for s in req.sites
+    ]
+
+    # Fan out: one pipeline run per site, in parallel. A single site failing
+    # (e.g. SIMBAD/weather hiccup) must not sink the whole comparison.
+    results = await asyncio.gather(
+        *(_run_pipeline(pr) for pr in plan_reqs),
+        return_exceptions=True,
+    )
+
+    scored_sites: list[dict] = []
+    for site, result in zip(req.sites, results):
+        if isinstance(result, Exception):
+            logger.warning("compare-sites: pipeline failed for %s: %s", site.label, result)
+            scored_sites.append(_failed_site(site, result))
+        else:
+            scored_sites.append(_score_site(site, result))
+
+    scored_sites.sort(key=lambda s: s["composite_score"], reverse=True)
+    best = scored_sites[0] if scored_sites else None
+
+    recommendation = await _compare_recommendation(scored_sites)
+
+    return {
+        "sites": scored_sites,
+        "best_site": best["label"] if best else None,
+        "recommendation": recommendation,
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
+
+
+def _score_site(site: CompareSite, plan: dict) -> dict:
+    """Derive per-site sub-scores and the weighted composite from a plan run."""
+    bortle = plan.get("bortle_class") or plan.get("request", {}).get("bortle_class") or 6
+    weather = plan.get("weather")
+    targets = plan.get("targets") or []
+    seeing = plan.get("seeing_forecast") or []
+
+    # Darkness: Bortle 1 -> 1.0, Bortle 9 -> 0.0.
+    darkness_score = (9 - bortle) / 8.0
+
+    # Weather: reuse the integration's 0–1 heuristic; unknown -> neutral 0.5.
+    weather_score = float(weather["weather_score"]) if weather and weather.get("weather_score") is not None else 0.5
+    cloud_cover = float(weather["cloud_cover"]) if weather and weather.get("cloud_cover") is not None else None
+
+    # Seeing: median predicted FWHM across the night's slots.
+    arcsec_values = [
+        s["predicted_seeing_arcsec"]
+        for s in seeing
+        if s.get("predicted_seeing_arcsec") is not None
+    ]
+    median_seeing = float(median(arcsec_values)) if arcsec_values else None
+    seeing_score = (
+        _clamp01((_SEEING_WORST_ARCSEC - median_seeing) / (_SEEING_WORST_ARCSEC - _SEEING_BEST_ARCSEC))
+        if median_seeing is not None
+        else 0.5
+    )
+
+    # Targets: how many well-placed objects the site offers.
+    target_count = len(targets)
+    targets_score = _clamp01(target_count / _TARGET_COUNT_FULL)
+
+    composite = 100.0 * (
+        _COMPARE_WEIGHTS["darkness"] * darkness_score
+        + _COMPARE_WEIGHTS["weather"] * weather_score
+        + _COMPARE_WEIGHTS["seeing"] * seeing_score
+        + _COMPARE_WEIGHTS["targets"] * targets_score
+    )
+
+    return {
+        "label": site.label,
+        "lat": site.lat,
+        "lon": site.lon,
+        "bortle_class": bortle,
+        "cloud_cover": cloud_cover,
+        "weather_score": round(weather_score, 3),
+        "median_seeing_arcsec": round(median_seeing, 2) if median_seeing is not None else None,
+        "visible_target_count": target_count,
+        "top_targets": [t.get("name") for t in targets[:3] if t.get("name")],
+        "subscores": {
+            "darkness": round(darkness_score, 3),
+            "weather": round(weather_score, 3),
+            "seeing": round(seeing_score, 3),
+            "targets": round(targets_score, 3),
+        },
+        "composite_score": round(composite, 1),
+        "error": None,
+    }
+
+
+def _failed_site(site: CompareSite, exc: Exception) -> dict:
+    """Placeholder entry (composite 0) for a site whose pipeline failed."""
+    return {
+        "label": site.label,
+        "lat": site.lat,
+        "lon": site.lon,
+        "bortle_class": None,
+        "cloud_cover": None,
+        "weather_score": None,
+        "median_seeing_arcsec": None,
+        "visible_target_count": 0,
+        "top_targets": [],
+        "subscores": None,
+        "composite_score": 0.0,
+        "error": _describe_exc(exc),
+    }
+
+
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+async def _compare_recommendation(scored_sites: list[dict]) -> str:
+    """One-sentence pick. Claude when OPENROUTER_API_KEY is set, else heuristic."""
+    if not scored_sites:
+        return "No sites to compare."
+
+    deterministic = _heuristic_recommendation(scored_sites)
+
+    # Best-effort LLM polish; never fatal if the key is missing or the call fails.
+    if not _explainer.api_key:
+        return deterministic
+    try:
+        context = {
+            "sites": [
+                {
+                    k: s[k]
+                    for k in ("label", "bortle_class", "cloud_cover",
+                              "median_seeing_arcsec", "visible_target_count",
+                              "composite_score")
+                }
+                for s in scored_sites
+            ]
+        }
+        answer = await _explainer.ask(
+            question=(
+                "In one sentence, recommend which of these observing sites is "
+                "best for tonight and why, citing the concrete factor "
+                "(darkness, clouds, or seeing) that decides it."
+            ),
+            plan_context=context,
+        )
+        answer = (answer or "").strip()
+        return answer or deterministic
+    except Exception as exc:  # missing key, OpenRouter outage, parse error
+        logger.info("compare-sites recommendation fell back to heuristic: %s", exc)
+        return deterministic
+
+
+def _heuristic_recommendation(scored_sites: list[dict]) -> str:
+    """Deterministic recommendation sentence used as the no-LLM fallback."""
+    best = scored_sites[0]
+    if best["composite_score"] <= 0:
+        return "None of the candidate sites returned a usable forecast tonight."
+
+    reasons = []
+    if best.get("bortle_class") is not None:
+        reasons.append(f"Bortle {best['bortle_class']} skies")
+    if best.get("cloud_cover") is not None:
+        reasons.append(f"{round(best['cloud_cover'])}% cloud cover")
+    if best.get("median_seeing_arcsec") is not None:
+        reasons.append(f"{best['median_seeing_arcsec']}\u2033 median seeing")
+    reason_str = ", ".join(reasons) if reasons else "the best overall conditions"
+    return (
+        f"{best['label']} is the best pick tonight (score "
+        f"{best['composite_score']}/100) thanks to {reason_str}."
+    )
 
 
 # ---------------------------------------------------------------------------
