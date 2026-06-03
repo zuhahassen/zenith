@@ -65,6 +65,11 @@ FEATURE_NAMES: tuple[str, ...] = (
     "wind_shear_850_300",   # |V(850hPa) - V(300hPa)|, m/s
     "wind_shear_500_200",   # |V(500hPa) - V(200hPa)|, jet-stream level, m/s
     "tropopause_stability",  # T(500hPa) - T(850hPa), atmospheric-stability proxy
+    # Site geolocation (multi-site model only; NaN for single-site training and
+    # ignored by the trees there). Lets one combined model condition on which
+    # observatory it is predicting for. Read from the current sample dict.
+    "site_lat",
+    "site_lon",
 )
 
 N_FEATURES = len(FEATURE_NAMES)
@@ -143,6 +148,10 @@ def build_feature_vector(weather_history: list[dict]) -> np.ndarray:
     # --- pressure-level structure (ERA5 only; NaN-safe) -------------------
     shear_850_300, shear_500_200, tropo_stability = _pressure_level_features(current)
 
+    # --- site geolocation (multi-site only; NaN-safe) ---------------------
+    site_lat = _f(current.get("site_lat"))
+    site_lon = _f(current.get("site_lon"))
+
     vec = np.array([
         temp,
         dewpoint_depression,
@@ -161,6 +170,7 @@ def build_feature_vector(weather_history: list[dict]) -> np.ndarray:
         hour_sin, hour_cos,
         doy_sin,  doy_cos,
         shear_850_300, shear_500_200, tropo_stability,
+        site_lat, site_lon,
     ], dtype=float)
 
     assert vec.shape == (N_FEATURES,), f"feature vector shape mismatch: {vec.shape}"

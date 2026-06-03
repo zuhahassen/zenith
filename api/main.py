@@ -557,6 +557,11 @@ async def _weather_history_for_seeing(
             "wind_u_10m": u,
             "wind_v_10m": v,
             "cloud_cover": _safe_get(hourly, "cloudcover", i),
+            # Site geolocation features. Ignored by the single-site Stanford
+            # model (it trained on NaN here) but used by the multi-site model
+            # to condition on which observatory it is predicting for.
+            "site_lat": lat,
+            "site_lon": lon,
         })
 
     return rows
