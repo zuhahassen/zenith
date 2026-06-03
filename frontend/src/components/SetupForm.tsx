@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, MapPin, Search } from "lucide-react";
-import type { Mode, PlanRequest } from "../types/zenith";
+import type { CatalogFilter, Mode, PlanRequest } from "../types/zenith";
 import { estimateBortle } from "../lib/lightPollution";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
@@ -13,6 +13,15 @@ const DARKNESS_PRESETS: { label: string; bortle: number }[] = [
   { label: "Suburban (Bortle 6-7)", bortle: 6 },
   { label: "Rural (Bortle 4-5)", bortle: 4 },
   { label: "Dark site (Bortle 1-3)", bortle: 2 },
+];
+
+// Named observing lists offered in observer mode (astrophotographers want the
+// full catalog). "all" maps to no filter.
+const CATALOG_OPTIONS: { value: "all" | CatalogFilter; label: string }[] = [
+  { value: "all", label: "All targets" },
+  { value: "messier", label: "Messier" },
+  { value: "caldwell", label: "Caldwell" },
+  { value: "herschel400", label: "Herschel 400" },
 ];
 
 // Cycling status lines shown while the plan request is in flight.
@@ -41,6 +50,7 @@ export function SetupForm({ onSubmit, loading }: Props) {
   const [aperture, setAperture] = useState<number>(150);
   const [customAperture, setCustomAperture] = useState("");
   const [mode, setMode] = useState<Mode>("observer");
+  const [catalog, setCatalog] = useState<"all" | CatalogFilter>("all");
   // null = auto (use the coordinate-based estimate).
   const [bortle, setBortle] = useState<number | null>(null);
   const [focalLength, setFocalLength] = useState("750");
@@ -198,6 +208,8 @@ export function SetupForm({ onSubmit, loading }: Props) {
       aperture_mm: apertureValue,
       mode,
       bortle_class: bortle ?? undefined,
+      // Catalog filtering is an observer-mode affordance only.
+      catalog_filter: mode === "observer" && catalog !== "all" ? catalog : undefined,
     };
     if (mode === "astrophotographer") {
       req.focal_length_mm = parseFloat(focalLength) || undefined;
@@ -330,6 +342,23 @@ export function SetupForm({ onSubmit, loading }: Props) {
           </button>
         </div>
       </div>
+
+      {mode === "observer" && (
+        <div className="setup__field">
+          <div className="setup__label">Catalog</div>
+          <div className="mode-pill" style={{ flexWrap: "wrap" }}>
+            {CATALOG_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                className={catalog === opt.value ? "active" : ""}
+                onClick={() => setCatalog(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="setup__field">
         <div className="setup__label">Sky darkness</div>

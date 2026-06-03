@@ -40,7 +40,7 @@ from .agent.explainer import Explainer
 from .agent.planner import SessionPlanner
 from .integrations.mast import MASTClient
 from .integrations.weather import fetch_nightly_forecast, fetch_weather
-from .pipeline.catalog import SEED_CATALOG, fetch_targets, to_targets
+from .pipeline.catalog import NAMED_CATALOGS, SEED_CATALOG, fetch_targets, filter_to_catalog, to_targets
 from .pipeline.light_pollution import estimate_bortle
 from .pipeline.seeing import NUM_SLOTS, SLOT_MINUTES, SeeingPredictor
 from .pipeline.visibility import (
@@ -103,6 +103,11 @@ class PlanRequest(BaseModel):
 
     # Sky darkness. When omitted, estimated from coordinates.
     bortle_class: Optional[int] = Field(default=None, ge=1, le=9)
+
+    # Restrict candidates to a named observing list. One of the keys in
+    # NAMED_CATALOGS ("messier", "caldwell", "herschel400") or None for the
+    # full catalog. Unknown values are ignored.
+    catalog_filter: Optional[str] = Field(default=None)
 
     # Astrophotographer equipment (used for FoV framing in astro mode).
     focal_length_mm: Optional[float] = Field(default=None, gt=0)
@@ -283,6 +288,21 @@ async def _run_pipeline(req: PlanRequest) -> dict:
         min_angular_size_arcmin=0.5,
         row_limit=400,
     )
+
+    # Optional named-catalog restriction (Messier / Caldwell / Herschel 400),
+    # applied after the SIMBAD query and before visibility. If the filter would
+    # leave too few candidates to make a useful plan, ignore it rather than
+    # returning a near-empty session.
+    if req.catalog_filter and req.catalog_filter in NAMED_CATALOGS and catalog_rows:
+        filtered = filter_to_catalog(catalog_rows, req.catalog_filter)
+        if len(filtered) >= _MIN_CATALOG_FILTER_TARGETS:
+            catalog_rows = filtered
+        else:
+            logger.warning(
+                "catalog_filter '%s' left only %d candidate(s) (<%d); ignoring filter",
+                req.catalog_filter, len(filtered), _MIN_CATALOG_FILTER_TARGETS,
+            )
+
     targets = to_targets(catalog_rows) if catalog_rows else SEED_CATALOG
 
     estimated_bortle = estimate_bortle(req.lat, req.lon)
@@ -447,6 +467,11 @@ def _object_types_for_mode(mode: Mode) -> list[str]:
         return ["galaxy", "nebula", "planetary_nebula", "supernova_remnant"]
     # Visual observer — anything bright and visually interesting.
     return ["galaxy", "globular_cluster", "open_cluster", "nebula", "planetary_nebula"]
+
+
+# A named-catalog filter that leaves fewer than this many candidates is
+# discarded (the plan is more useful unfiltered than nearly empty).
+_MIN_CATALOG_FILTER_TARGETS = 5
 
 
 def _mag_limit_for_aperture(aperture_mm: float) -> float:

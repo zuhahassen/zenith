@@ -3,6 +3,8 @@
 
 export type Mode = "observer" | "astrophotographer";
 
+export type CatalogFilter = "messier" | "caldwell" | "herschel400";
+
 export type ObjectKind =
   | "Galaxy"
   | "Nebula"
@@ -19,6 +21,7 @@ export interface PlanRequest {
   user_id?: string | null;
   mode: Mode;
   bortle_class?: number | null;
+  catalog_filter?: CatalogFilter | null;
   focal_length_mm?: number | null;
   sensor_width_mm?: number | null;
   sensor_height_mm?: number | null;

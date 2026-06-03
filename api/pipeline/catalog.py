@@ -19,13 +19,100 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
+from pathlib import Path
 from typing import Optional
 
 from .visibility import Target
 
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Named observing catalogs (Messier / Caldwell / Herschel 400)
+# ---------------------------------------------------------------------------
+# Serious observers work named lists. We model each catalog as the set of object
+# *numbers* it contains, paired with the designation prefix used to match a
+# target's SIMBAD identifier (e.g. "M 31" -> prefix "M", number "31").
+#
+# Matching note: SIMBAD's canonical main_id for Caldwell objects is almost
+# always the NGC/IC designation rather than "C n", so the Caldwell filter only
+# matches when a target's name actually carries a "C" designation. When a filter
+# leaves too few candidates the pipeline ignores it (see filter_to_catalog
+# callers), so this degrades gracefully rather than returning an empty plan.
+
+_DATA_DIR = Path(__file__).resolve().parent / "data"
+
+
+def _load_herschel400() -> set[str]:
+    """Load the Herschel 400 NGC numbers from the bundled data file.
+
+    Returns an empty set (and logs) if the file is missing, so importing this
+    module never hard-fails. The file is plain text, one NGC number per line,
+    with '#' comments ignored.
+    """
+    path = _DATA_DIR / "herschel400_ngc.txt"
+    try:
+        nums: set[str] = set()
+        for line in path.read_text().splitlines():
+            s = line.strip()
+            if s and not s.startswith("#"):
+                nums.add(s.lstrip("0") or "0")
+        return nums
+    except OSError as exc:
+        logger.warning("Herschel 400 list unavailable (%s); filter disabled", exc)
+        return set()
+
+
+NAMED_CATALOGS: dict[str, set[str]] = {
+    "messier": {str(i) for i in range(1, 111)},     # M1–M110
+    "caldwell": {str(i) for i in range(1, 110)},    # C1–C109
+    "herschel400": _load_herschel400(),             # 400 NGC numbers
+}
+
+# Designation prefix each catalog matches against in a target's identifier.
+_CATALOG_PREFIX: dict[str, str] = {
+    "messier": "M",
+    "caldwell": "C",
+    "herschel400": "NGC",
+}
+
+# Splits an identifier like "M 31", "NGC7000", "IC 1396" into (prefix, number).
+_DESIGNATION_RE = re.compile(r"^\s*([A-Za-z]+)\s*0*(\d+)")
+
+
+def _designation(name: Optional[str]) -> Optional[tuple[str, str]]:
+    if not name:
+        return None
+    m = _DESIGNATION_RE.match(name)
+    if not m:
+        return None
+    return m.group(1).upper(), m.group(2)
+
+
+def filter_to_catalog(targets: list[dict], catalog_name: Optional[str]) -> list[dict]:
+    """Restrict target dicts to members of a named catalog.
+
+    Matches a target when its ``name`` or ``common_name`` carries the catalog's
+    designation prefix and a number in the catalog set (e.g. catalog "messier"
+    keeps "M 31"; "herschel400" keeps "NGC 2403"). Unknown or empty
+    ``catalog_name`` is a no-op (returns the input unchanged).
+    """
+    catalog = NAMED_CATALOGS.get(catalog_name or "")
+    prefix = _CATALOG_PREFIX.get(catalog_name or "")
+    if not catalog or not prefix:
+        return targets
+
+    kept: list[dict] = []
+    for t in targets:
+        for field in ("name", "common_name"):
+            d = _designation(t.get(field))
+            if d and d[0] == prefix and d[1] in catalog:
+                kept.append(t)
+                break
+    return kept
 
 
 # ---------------------------------------------------------------------------
