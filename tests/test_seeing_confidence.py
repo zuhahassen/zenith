@@ -25,13 +25,26 @@ def test_quantile_median_is_point_estimate():
 
 def test_confidence_inverse_of_interval_width():
     # Wide interval -> low confidence; narrow interval -> high confidence.
-    wide = np.array([[0.5, 1.5, 3.0]])    # spread 2.5 -> 1/2.5 = 0.4
-    narrow = np.array([[1.4, 1.5, 1.6]])  # spread 0.2 -> 1/0.2 = 5 -> clipped
+    wide = np.array([[0.5, 1.5, 3.0]])    # spread 2.5 (>> SPREAD_WIDE) -> CONF_MIN
+    narrow = np.array([[1.4, 1.5, 1.6]])  # spread 0.2 (< SPREAD_TIGHT) -> CONF_MAX
     _, c_wide = _seeing_and_confidence(wide)
     _, c_narrow = _seeing_and_confidence(narrow)
     assert c_wide[0] < c_narrow[0]
-    assert np.isclose(c_wide[0], 0.4, atol=1e-6)
+    assert np.isclose(c_wide[0], CONF_MIN, atol=1e-6)
     assert np.isclose(c_narrow[0], CONF_MAX)
+
+
+def test_confidence_varies_in_midrange():
+    # Realistic model spreads (0.23-0.50 arcsec) must map to DISTINCT,
+    # interior confidences -- the old 1/spread map saturated at CONF_MAX here.
+    preds = np.array([
+        [1.385, 1.5, 1.615],  # spread 0.23 -> ~CONF_MAX
+        [1.32, 1.5, 1.68],    # spread 0.36 -> interior
+        [1.25, 1.5, 1.75],    # spread 0.50 -> ~CONF_MIN
+    ])
+    _, conf = _seeing_and_confidence(preds)
+    assert conf[0] > conf[1] > conf[2]
+    assert CONF_MIN < conf[1] < CONF_MAX  # genuinely interior, not clipped
 
 
 def test_confidence_clipped_to_bounds():

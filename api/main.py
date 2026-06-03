@@ -293,7 +293,14 @@ async def _run_pipeline(req: PlanRequest) -> dict:
         weather_history = await _weather_history_for_seeing(req.lat, req.lon)
     except Exception:
         weather_history = []
-    seeing_forecast = _seeing.predict(weather_history)
+    # Anchor slot 0 at "now" so the 16 half-hour slots walk forward through the
+    # forecast hours. Without an explicit anchor the predictor would default to
+    # the latest sample's timestamp (the furthest forecast hour) and the slots
+    # would run past the available forecast window.
+    seeing_forecast = _seeing.predict(
+        weather_history,
+        session_start=datetime.now(tz=timezone.utc),
+    )
 
     try:
         weather = await fetch_weather(req.lat, req.lon)
@@ -454,7 +461,14 @@ _HOURLY_VARS = (
     "temperature_2m,relativehumidity_2m,dewpoint_2m,pressure_msl,"
     "windspeed_10m,winddirection_10m,wind_u_10m,wind_v_10m,cloudcover"
 )
-_HISTORY_ENTRIES = 12  # last 12 hourly samples feeding the seeing features
+# The seeing predictor needs two things from this window:
+#   * a few hours of PAST weather so the rolling-window features
+#     (temp_mean_3h, wind_speed_delta_30m, ...) have real data, and
+#   * the upcoming night's FORECAST hours so each of the 16 half-hour slots
+#     selects a distinct sample and the per-slot seeing/confidence actually
+#     varies (otherwise every slot reuses the latest observation).
+_HISTORY_PAST_HOURS = 4      # >= the 3h rolling window plus margin
+_HISTORY_FUTURE_HOURS = 9    # covers the 16 x 30min = 8h forecast plus margin
 
 
 async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
@@ -490,11 +504,13 @@ async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
         return []
 
     now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+    window_lo = now_ts - _HISTORY_PAST_HOURS * 3600
+    window_hi = now_ts + _HISTORY_FUTURE_HOURS * 3600
 
     rows: list[dict] = []
     for i, ts in enumerate(times):
-        if ts > now_ts:
-            continue  # don't feed forecast values into the predictor's history
+        if ts < window_lo or ts > window_hi:
+            continue  # keep recent past (rolling stats) + near-term forecast (per-slot)
 
         speed = _safe_get(hourly, "windspeed_10m", i)
         direction = _safe_get(hourly, "winddirection_10m", i)
@@ -516,7 +532,7 @@ async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
             "cloud_cover": _safe_get(hourly, "cloudcover", i),
         })
 
-    return rows[-_HISTORY_ENTRIES:]
+    return rows
 
 
 def _wind_components(speed, direction):

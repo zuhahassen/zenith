@@ -41,8 +41,14 @@ FALLBACK_CONFIDENCE  = 0.3
 # Confidence bounds and interval handling for the quantile model.
 CONF_MIN = 0.4
 CONF_MAX = 0.95
-MIN_INTERVAL_ARCSEC = 1.0 / CONF_MAX  # so 1/spread can reach CONF_MAX cleanly
-LEGACY_CONFIDENCE = 0.7               # flat confidence for 1-D point models
+# Confidence is a linear function of the P10-P90 interval width, anchored to
+# the empirical spread distribution of the trained model (Stanford 3yr ERA5:
+# p10 ~ 0.23", p90 ~ 0.47"). A tight interval => high confidence; a wide one
+# => low. A naive 1/spread map saturated at CONF_MAX because real spreads are
+# all well below 1", so the confidence never varied.
+SPREAD_TIGHT_ARCSEC = 0.23   # ~p10 of model spread -> CONF_MAX
+SPREAD_WIDE_ARCSEC  = 0.50   # ~p90 of model spread -> CONF_MIN
+LEGACY_CONFIDENCE = 0.7      # flat confidence for 1-D point models
 
 NUM_SLOTS = 16
 SLOT_MINUTES = 30
@@ -242,10 +248,13 @@ def _seeing_and_confidence(preds: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     Two model shapes are supported for backward compatibility:
 
       * Quantile model (preferred): ``preds`` is (N, 3) for the P10/P50/P90
-        columns. The point estimate is the median; confidence comes from the
-        width of the 80% interval:
+        columns. The point estimate is the median; confidence is a linear
+        function of the 80% interval width, anchored to the model's empirical
+        spread range so it actually varies across slots:
 
-            confidence = clip(1.0 / (fwhm_90 - fwhm_10), 0.4, 0.95)
+            t = (spread - SPREAD_TIGHT) / (SPREAD_WIDE - SPREAD_TIGHT)
+            confidence = clip(CONF_MAX - t * (CONF_MAX - CONF_MIN),
+                              CONF_MIN, CONF_MAX)
 
       * Legacy point-estimate model: ``preds`` is 1-D. We return it directly
         with a flat mid-band confidence, since no interval is available.
@@ -255,9 +264,12 @@ def _seeing_and_confidence(preds: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         p10 = preds[:, 0]
         p50 = preds[:, 1]
         p90 = preds[:, 2]
-        # Guard against quantile crossing / degenerate intervals.
-        spread = np.maximum(p90 - p10, MIN_INTERVAL_ARCSEC)
-        confidence = np.clip(1.0 / spread, CONF_MIN, CONF_MAX)
+        # Clip quantile crossing, then map interval width -> confidence
+        # linearly between the empirical tight/wide reference spreads.
+        spread = np.maximum(p90 - p10, 0.0)
+        denom = SPREAD_WIDE_ARCSEC - SPREAD_TIGHT_ARCSEC
+        t = (spread - SPREAD_TIGHT_ARCSEC) / denom
+        confidence = np.clip(CONF_MAX - t * (CONF_MAX - CONF_MIN), CONF_MIN, CONF_MAX)
         return p50, confidence
 
     seeing = preds.ravel()
