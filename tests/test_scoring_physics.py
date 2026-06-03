@@ -57,8 +57,10 @@ def test_city_cores_are_bright():
 
 
 def test_remote_defaults_or_dark():
-    # Middle of Montana — outside every ring -> suburban default.
-    assert estimate_bortle(46.0, -109.0) == 6
+    # Middle of Montana — far from any metro. The population-scaled grid now
+    # resolves remote sites to genuinely dark classes rather than the old
+    # coarse suburban Bortle-6 default.
+    assert estimate_bortle(46.0, -109.0) <= 4
 
 
 # ---------- FoV matching ----------
