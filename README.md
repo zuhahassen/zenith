@@ -192,6 +192,40 @@ stopping. On the Stanford 3-year dataset (2192 nightly samples) it reaches
 MAE 0.12 arcsec on the median with an out-of-season chronological holdout, and
 the distribution check confirms log-normal labels with a ~1.3 arcsec median.
 
+### Multi-site model
+
+The seeing model generalizes across observatories rather than overfitting a
+single location. The combined trainer ingests several geographically diverse
+sites, splits each chronologically (so no site's future leaks into another's
+past), and fits one quantile booster on the union:
+
+| Site                    | Slug             | Lat       | Lon        |
+|-------------------------|------------------|-----------|------------|
+| Stanford, CA            | `stanford`       | +37.428   | -122.170   |
+| Maunakea, HI            | `maunakea`       | +19.820   | -155.470   |
+| La Palma, ES            | `lapalma`        | +28.760   | -17.890    |
+| Haute-Provence, FR      | `haute_provence` | +43.931   | +5.714     |
+| ESO Paranal, CL         | `paranal`        | -24.628   | -70.404    |
+| SAAO Sutherland, ZA     | `sutherland`     | -32.378   | +20.811    |
+| Kitt Peak, AZ           | `kittpeak`       | +31.958   | -111.597   |
+
+```bash
+# Harvest the four new sites and retrain across all seven in one step.
+# Requires ~/.cdsapirc; reuses any existing api/ml/data/{slug}_era5.npz caches.
+bash scripts/harvest_train_multisite.sh
+
+# Or run the pieces manually:
+.venv/bin/python -m api.ml.harvest_generic --lat 43.9308 --lon 5.7136 \
+    --name haute_provence --years 2023 2024 2025
+.venv/bin/python -m api.ml.train_multisite \
+    --sites stanford maunakea lapalma haute_provence paranal sutherland kittpeak \
+    --output api/ml/models/multisite_model.json
+```
+
+The trainer prints per-site and overall validation metrics (MAE, R², 80%
+interval coverage); the run script tees them to `multisite_metrics.txt`. Point
+`SEEING_MODEL_PATH` at the resulting `multisite_model.json` to serve it.
+
 The ERA5 dependencies (`cdsapi`, `xarray`, `netCDF4`) are imported lazily and are only needed for this offline step, not by the API server. Harvested datasets live under `api/ml/data/` (gitignored); only the trained `seeing_model.json` is committed and shipped.
 
 ## Deployment
