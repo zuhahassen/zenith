@@ -16,12 +16,20 @@ const SessionTimeline = lazy(() =>
 const ChatPane = lazy(() =>
   import("./components/ChatPane").then((m) => ({ default: m.ChatPane })),
 );
+const SiteComparison = lazy(() =>
+  import("./components/SiteComparison").then((m) => ({ default: m.SiteComparison })),
+);
+const CommunityFavorites = lazy(() =>
+  import("./components/CommunityFavorites").then((m) => ({ default: m.CommunityFavorites })),
+);
 
 export default function App() {
   const plan = usePlan();
   const [selectedTarget, setSelectedTarget] = useState<ScoredTarget | null>(null);
   // Per-session target ratings keyed by target name (1 up, -1 down).
   const [ratings, setRatings] = useState<Record<string, number>>({});
+  // Top-level view: the single-site planner or the multi-site comparison tool.
+  const [view, setView] = useState<"planner" | "compare">("planner");
 
   function submit(req: PlanRequest) {
     setSelectedTarget(null);
@@ -45,8 +53,26 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        {!data ? (
-          <SetupForm onSubmit={submit} loading={plan.isPending} />
+        {view === "compare" ? (
+          <Suspense fallback={<div className="muted" style={{ padding: 32 }}>Loading…</div>}>
+            <SiteComparison onBack={() => setView("planner")} />
+          </Suspense>
+        ) : !data ? (
+          <>
+            <SetupForm onSubmit={submit} loading={plan.isPending} />
+            {!plan.isPending && (
+              <>
+                <div style={{ maxWidth: 520, margin: "0 auto", width: "100%" }}>
+                  <Suspense fallback={null}>
+                    <CommunityFavorites />
+                  </Suspense>
+                </div>
+                <div className="app-mode-switch">
+                  <button onClick={() => setView("compare")}>Compare multiple sites →</button>
+                </div>
+              </>
+            )}
+          </>
         ) : (
           <PlanView
             data={data}

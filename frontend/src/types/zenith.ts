@@ -129,6 +129,69 @@ export interface PlanResponse {
   ai_plan?: AIPlan;
 }
 
+// --- Multi-site comparison (POST /api/compare-sites) ----------------------
+
+export interface CompareSiteInput {
+  label: string;
+  lat: number;
+  lon: number;
+}
+
+export interface CompareSitesRequest {
+  sites: CompareSiteInput[];
+  aperture_mm: number;
+  mode: Mode;
+  date?: string | null;
+  catalog_filter?: CatalogFilter | null;
+  duration_hours?: number;
+  min_alt_deg?: number;
+}
+
+export interface CompareSiteSubscores {
+  darkness: number;
+  weather: number;
+  seeing: number;
+  targets: number;
+}
+
+export interface CompareSiteResult {
+  label: string;
+  lat: number;
+  lon: number;
+  bortle_class: number | null;
+  cloud_cover: number | null;
+  weather_score: number | null;
+  median_seeing_arcsec: number | null;
+  visible_target_count: number;
+  top_targets: string[];
+  subscores: CompareSiteSubscores | null;
+  composite_score: number;
+  error: string | null;
+}
+
+export interface CompareSitesResponse {
+  sites: CompareSiteResult[];
+  best_site: string | null;
+  recommendation: string;
+  generated_at: string;
+}
+
+// --- Community favorites (GET /api/community-favorites) --------------------
+
+export interface CommunityFavorite {
+  target_name: string;
+  net_score: number;
+  up_votes: number;
+  down_votes: number;
+  total_votes: number;
+  approval: number; // 0..1 fraction of positive votes
+}
+
+export interface CommunityFavoritesResponse {
+  favorites: CommunityFavorite[];
+  total_targets_rated: number;
+}
+
 export interface ExplainRequest {
   question: string;
   plan_context: Record<string, unknown>;
