@@ -82,6 +82,9 @@ export interface AIPlanItem {
   object_type: string;
   why: string;
   seeing_at_slot: number;
+  // Plain-English, jargon-free note on what a visual observer will actually
+  // see through the eyepiece. Requested from Claude per target (see planner).
+  observer_note?: string | null;
   reference_image?: ReferenceImage | null;
 }
 

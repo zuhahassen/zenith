@@ -58,12 +58,20 @@ Return your response in exactly this format and nothing else:
       "slot": "2026-06-02T05:30:00+00:00",
       "object_type": "GlCl",
       "why": "one sentence — why this target, this slot",
-      "seeing_at_slot": 1.8
+      "seeing_at_slot": 1.8,
+      "observer_note": "2-3 sentences in plain, jargon-free English describing what a visual observer will actually see through the eyepiece at the recommended aperture, what magnification works best, and one honest note about difficulty or what makes it rewarding."
     }
   ],
   "session_summary": "2-3 sentence summary of the night."
 }
 ```
+
+For each target, the `observer_note` field is required. Write it as if
+explaining to an intelligent adult who has never used a telescope: describe
+what they will actually see in the eyepiece, what magnification works best,
+and one honest note about difficulty or what makes it rewarding. Do NOT use
+terms like "surface brightness", "arc minutes", or "magnitude" without
+explaining them in plain words.
 
 After the closing fence, write a markdown section that starts with
 `## Session notes` and contains 2–4 short paragraphs of observing guidance
