@@ -42,8 +42,16 @@ from .integrations.mast import MASTClient
 from .integrations.weather import fetch_nightly_forecast, fetch_weather
 from .pipeline.catalog import SEED_CATALOG, fetch_targets, to_targets
 from .pipeline.light_pollution import estimate_bortle
-from .pipeline.seeing import NUM_SLOTS, SeeingPredictor
-from .pipeline.visibility import Gear, Observer, Scored, Session, plan_session
+from .pipeline.seeing import NUM_SLOTS, SLOT_MINUTES, SeeingPredictor
+from .pipeline.visibility import (
+    Gear,
+    Observer,
+    Scored,
+    Session,
+    location_for,
+    plan_session,
+    session_start,
+)
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -289,18 +297,14 @@ async def _run_pipeline(req: PlanRequest) -> dict:
     )
     notice = None if scored else _empty_plan_reason(obs, session, targets)
 
+    # Anchor slot 0 at tonight's astronomical dusk so the 16 half-hour slots
+    # cover the actual observable night window rather than the API call time.
+    seeing_anchor = _seeing_anchor(obs, session)
     try:
-        weather_history = await _weather_history_for_seeing(req.lat, req.lon)
+        weather_history = await _weather_history_for_seeing(req.lat, req.lon, seeing_anchor)
     except Exception:
         weather_history = []
-    # Anchor slot 0 at "now" so the 16 half-hour slots walk forward through the
-    # forecast hours. Without an explicit anchor the predictor would default to
-    # the latest sample's timestamp (the furthest forecast hour) and the slots
-    # would run past the available forecast window.
-    seeing_forecast = _seeing.predict(
-        weather_history,
-        session_start=datetime.now(tz=timezone.utc),
-    )
+    seeing_forecast = _seeing.predict(weather_history, session_start=seeing_anchor)
 
     try:
         weather = await fetch_weather(req.lat, req.lon)
@@ -467,11 +471,29 @@ _HOURLY_VARS = (
 #   * the upcoming night's FORECAST hours so each of the 16 half-hour slots
 #     selects a distinct sample and the per-slot seeing/confidence actually
 #     varies (otherwise every slot reuses the latest observation).
-_HISTORY_PAST_HOURS = 4      # >= the 3h rolling window plus margin
-_HISTORY_FUTURE_HOURS = 9    # covers the 16 x 30min = 8h forecast plus margin
+_HISTORY_PAST_HOURS = 4         # >= the 3h rolling window plus margin
+_FORECAST_MARGIN_HOURS = 2     # margin past the last slot so it isn't clamped
+_SESSION_SPAN_HOURS = NUM_SLOTS * SLOT_MINUTES / 60.0  # 16 x 30min = 8h
 
 
-async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
+def _seeing_anchor(obs: Observer, session: Session) -> datetime:
+    """Anchor the seeing forecast at tonight's astronomical dusk (sun < -18 deg).
+
+    Reuses the pipeline's Astropy twilight solver. Falls back to ``now`` when
+    dusk has already passed (a late-evening call), so the slots never start in
+    the past.
+    """
+    now = datetime.now(tz=timezone.utc)
+    try:
+        dusk = session_start(obs, session, location_for(obs)).to_datetime(timezone=timezone.utc)
+    except Exception:
+        return now
+    return dusk if dusk > now else now
+
+
+async def _weather_history_for_seeing(
+    lat: float, lon: float, anchor: Optional[datetime] = None,
+) -> list[dict]:
     """Pull recent hourly weather from Open-Meteo for the seeing predictor.
 
     Returns one dict per hour with the field names ``api.ml.features``
@@ -480,6 +502,10 @@ async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
     components are derived from speed + direction when the API doesn't
     supply ``wind_u_10m``/``wind_v_10m`` directly (which it currently
     doesn't), since ``features.py`` prefers u/v over speed+direction.
+
+    The kept window spans a few PAST hours (for the rolling stats) through the
+    end of the observing session anchored at ``anchor`` (default: now), so each
+    of the 16 forecast slots selects a distinct forecast hour.
     """
     import httpx
 
@@ -488,7 +514,7 @@ async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
         "longitude": lon,
         "hourly": _HOURLY_VARS,
         "past_days": 1,
-        "forecast_days": 1,
+        "forecast_days": 2,
         "timeformat": "unixtime",
         "windspeed_unit": "ms",
     }
@@ -504,8 +530,9 @@ async def _weather_history_for_seeing(lat: float, lon: float) -> list[dict]:
         return []
 
     now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+    anchor_ts = int((anchor or datetime.now(tz=timezone.utc)).timestamp())
     window_lo = now_ts - _HISTORY_PAST_HOURS * 3600
-    window_hi = now_ts + _HISTORY_FUTURE_HOURS * 3600
+    window_hi = anchor_ts + int((_SESSION_SPAN_HOURS + _FORECAST_MARGIN_HOURS) * 3600)
 
     rows: list[dict] = []
     for i, ts in enumerate(times):
