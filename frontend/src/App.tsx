@@ -1,38 +1,47 @@
 import { Suspense, lazy, useState } from "react";
-import { format } from "date-fns";
+import { Settings as SettingsIcon } from "lucide-react";
 
-import { SeeingForecast } from "./components/SeeingForecast";
 import { SetupForm } from "./components/SetupForm";
-import { TargetCard } from "./components/TargetCard";
+import { Sidebar, type View } from "./components/Sidebar";
+import { TonightView } from "./components/TonightView";
+import { TargetDetail } from "./components/TargetDetail";
 import { usePlan } from "./hooks/usePlan";
 import { getUserId, submitFeedback } from "./lib/feedback";
+import { loadSettings, resetSettings, saveSettings, type ZenithSettings } from "./lib/settings";
 import type { PlanRequest, PlanResponse, ScoredTarget } from "./types/zenith";
 
-// Lazy-loaded: neither is needed until a plan exists, so keep them out of the
-// initial bundle. Both are named exports, so adapt them to default exports.
-const SessionTimeline = lazy(() =>
-  import("./components/SessionTimeline").then((m) => ({ default: m.SessionTimeline })),
+const CompareView = lazy(() =>
+  import("./components/CompareView").then((m) => ({ default: m.CompareView })),
 );
-const ChatPane = lazy(() =>
-  import("./components/ChatPane").then((m) => ({ default: m.ChatPane })),
+const SettingsView = lazy(() =>
+  import("./components/SettingsView").then((m) => ({ default: m.SettingsView })),
 );
-const SiteComparison = lazy(() =>
-  import("./components/SiteComparison").then((m) => ({ default: m.SiteComparison })),
-);
-const CommunityFavorites = lazy(() =>
-  import("./components/CommunityFavorites").then((m) => ({ default: m.CommunityFavorites })),
-);
+const QAPanel = lazy(() => import("./components/QAPanel").then((m) => ({ default: m.QAPanel })));
 
 export default function App() {
   const plan = usePlan();
+  const [settings, setSettings] = useState<ZenithSettings>(() => loadSettings());
+  const [view, setView] = useState<View>("tonight");
   const [selectedTarget, setSelectedTarget] = useState<ScoredTarget | null>(null);
-  // Per-session target ratings keyed by target name (1 up, -1 down).
   const [ratings, setRatings] = useState<Record<string, number>>({});
-  // Top-level view: the single-site planner or the multi-site comparison tool.
-  const [view, setView] = useState<"planner" | "compare">("planner");
 
-  function submit(req: PlanRequest) {
+  const data: PlanResponse | undefined = plan.data;
+
+  function submit(req: PlanRequest, label: string) {
     setSelectedTarget(null);
+    const next: ZenithSettings = {
+      ...settings,
+      locationLabel: label,
+      lat: req.lat,
+      lon: req.lon,
+      aperture_mm: req.aperture_mm,
+      mode: req.mode,
+      bortle_class: req.bortle_class ?? null,
+      catalog: req.catalog_filter ?? "all",
+    };
+    setSettings(next);
+    saveSettings(next);
+    setView("tonight");
     plan.mutate({ ...req, user_id: getUserId() });
   }
 
@@ -41,169 +50,141 @@ export default function App() {
     submitFeedback(name, rating);
   }
 
-  const data: PlanResponse | undefined = plan.data;
+  function persistSettings(s: ZenithSettings) {
+    setSettings(s);
+    saveSettings(s);
+  }
+
+  const showRightPanel = Boolean(data);
+  const locLabel = settings.locationLabel || (data ? `${data.request.lat.toFixed(2)}, ${data.request.lon.toFixed(2)}` : "");
 
   return (
     <div className="app">
-      <header className="app-header">
-        <div className="app-header__title">ZENITH</div>
-        <div className="app-header__meta">
-          {format(new Date(), "yyyy-MM-dd HH:mm")} UTC
-        </div>
+      <header className="topbar">
+        <span className="topbar__brand">Zenith</span>
+        <span className="topbar__sep">·</span>
+        <span className="topbar__sub">Observation Planner</span>
+        <span className="topbar__spacer" />
+        {locLabel && <span className="topbar__loc">{locLabel}</span>}
+        <button className="topbar__gear" aria-label="Settings" onClick={() => setView("settings")}>
+          <SettingsIcon size={15} />
+        </button>
       </header>
 
-      <main className="app-main">
-        {view === "compare" ? (
-          <Suspense fallback={<div className="muted" style={{ padding: 32 }}>Loading…</div>}>
-            <SiteComparison onBack={() => setView("planner")} />
-          </Suspense>
-        ) : !data ? (
-          <>
-            <SetupForm onSubmit={submit} loading={plan.isPending} />
-            {!plan.isPending && (
-              <>
-                <div style={{ maxWidth: 520, margin: "0 auto", width: "100%" }}>
-                  <Suspense fallback={null}>
-                    <CommunityFavorites />
-                  </Suspense>
-                </div>
-                <div className="app-mode-switch">
-                  <button onClick={() => setView("compare")}>Compare multiple sites →</button>
-                </div>
-              </>
-            )}
-          </>
-        ) : (
-          <PlanView
+      <div className={`layout ${showRightPanel ? "" : "layout--setup"}`}>
+        <Sidebar view={view} onNavigate={setView} plan={data} />
+
+        <div className="main">
+          <MainContent
+            view={view}
             data={data}
-            onReset={() => {
-              setSelectedTarget(null);
-              plan.reset();
-            }}
-            onSelect={setSelectedTarget}
+            loading={plan.isPending}
+            error={plan.isError ? (plan.error as Error)?.message : null}
+            settings={settings}
             selectedName={selectedTarget?.name ?? null}
+            onSelect={setSelectedTarget}
+            onSubmit={submit}
+            onSaveSettings={persistSettings}
+            onResetSettings={() => persistSettings(resetSettings())}
           />
-        )}
-
-        {plan.isError && (
-          <div className="mono" style={{ padding: "0 32px", color: "var(--negative)" }}>
-            {(plan.error as Error)?.message ?? "Plan request failed."}
-          </div>
-        )}
-
-        <TargetCard
-          target={selectedTarget}
-          aiPlan={data?.ai_plan}
-          predictedSeeing={seeingForTarget(data, selectedTarget)}
-          mode={data?.request.mode}
-          rating={selectedTarget ? ratings[selectedTarget.name] ?? 0 : 0}
-          onRate={rate}
-          onClose={() => setSelectedTarget(null)}
-        />
-
-        {data && (
-          <Suspense fallback={null}>
-            <ChatPane planContext={planContextFor(data)} />
-          </Suspense>
-        )}
-      </main>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Plan view (post-setup)
-// ---------------------------------------------------------------------------
-
-interface PlanViewProps {
-  data: PlanResponse;
-  onReset: () => void;
-  onSelect: (t: ScoredTarget) => void;
-  selectedName: string | null;
-}
-
-function PlanView({ data, onReset, onSelect, selectedName }: PlanViewProps) {
-  const summary = data.ai_plan?.session_summary;
-  const notes = data.ai_plan?.session_notes;
-  const apiError = data.ai_plan?.error;
-  const isEmpty = data.targets.length === 0;
-
-  return (
-    <div className="plan-view">
-      <div className="plan-view__header">
-        <div>
-          <div className="plan-view__title">
-            Tonight from{" "}
-            <span className="mono">
-              {data.request.lat.toFixed(2)}, {data.request.lon.toFixed(2)}
-            </span>
-          </div>
-          {summary && <div className="plan-view__summary">{summary}</div>}
-          {apiError && (
-            <div className="plan-view__summary" style={{ color: "var(--negative)" }}>
-              AI plan unavailable: {apiError} — deterministic ordering shown below.
-            </div>
-          )}
         </div>
 
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-          <SeeingForecast slots={data.seeing_forecast} />
-          <button onClick={onReset}>New plan</button>
-        </div>
+        {showRightPanel && (
+          <aside className="detail">
+            {selectedTarget && data ? (
+              <>
+                <TargetDetail
+                  target={selectedTarget}
+                  aiPlan={data.ai_plan}
+                  predictedSeeing={seeingForTarget(data, selectedTarget)}
+                  mode={data.request.mode}
+                  rating={ratings[selectedTarget.name] ?? 0}
+                  onRate={rate}
+                />
+                <Suspense fallback={null}>
+                  <QAPanel planContext={planContextFor(data)} />
+                </Suspense>
+              </>
+            ) : (
+              <div className="detail__empty">Select a target to view details</div>
+            )}
+          </aside>
+        )}
       </div>
-
-      {isEmpty ? (
-        <div
-          style={{
-            margin: "0 32px 48px",
-            padding: "20px 24px",
-            maxWidth: 820,
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            background: "var(--accent-glow)",
-            color: "var(--text-secondary)",
-            fontSize: 14,
-            lineHeight: 1.7,
-          }}
-        >
-          <div className="setup__label" style={{ marginBottom: 8 }}>
-            No targets for this plan
-          </div>
-          {data.notice ??
-            "No targets matched. Try a different date, location, or gear."}
-        </div>
-      ) : (
-        <Suspense fallback={<div className="muted" style={{ padding: 32 }}>Loading timeline…</div>}>
-          <SessionTimeline
-            targets={data.targets}
-            seeingForecast={data.seeing_forecast}
-            onSelectTarget={onSelect}
-            moonIllumination={data.moon_illumination}
-            bortleClass={data.bortle_class}
-            selectedName={selectedName}
-          />
-        </Suspense>
-      )}
-
-      {notes && (
-        <section
-          style={{
-            padding: "0 32px 96px",
-            color: "var(--text-secondary)",
-            fontSize: 13,
-            lineHeight: 1.7,
-            whiteSpace: "pre-wrap",
-            maxWidth: 820,
-          }}
-        >
-          <div className="setup__label" style={{ marginBottom: 8 }}>
-            Session notes
-          </div>
-          {notes}
-        </section>
-      )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+
+interface MainContentProps {
+  view: View;
+  data?: PlanResponse;
+  loading: boolean;
+  error: string | null;
+  settings: ZenithSettings;
+  selectedName: string | null;
+  onSelect: (t: ScoredTarget) => void;
+  onSubmit: (req: PlanRequest, label: string) => void;
+  onSaveSettings: (s: ZenithSettings) => void;
+  onResetSettings: () => void;
+}
+
+function MainContent({
+  view,
+  data,
+  loading,
+  error,
+  settings,
+  selectedName,
+  onSelect,
+  onSubmit,
+  onSaveSettings,
+  onResetSettings,
+}: MainContentProps) {
+  if (view === "compare") {
+    return (
+      <>
+        <div className="panel-title">Site Comparison</div>
+        <Suspense fallback={<div className="center-load">Loading…</div>}>
+          <CompareView settings={settings} />
+        </Suspense>
+      </>
+    );
+  }
+
+  if (view === "history") {
+    return (
+      <>
+        <div className="panel-title">History</div>
+        <div className="center-load">No past sessions</div>
+      </>
+    );
+  }
+
+  if (view === "settings") {
+    return (
+      <>
+        <div className="panel-title">Settings</div>
+        <Suspense fallback={<div className="center-load">Loading…</div>}>
+          <SettingsView settings={settings} onSave={onSaveSettings} onReset={onResetSettings} />
+        </Suspense>
+      </>
+    );
+  }
+
+  // Tonight view
+  if (!data) {
+    return (
+      <>
+        <div className="panel-title">Tonight</div>
+        {error && <div className="err" style={{ padding: "0 20px" }}>{error}</div>}
+        <SetupForm settings={settings} loading={loading} onSubmit={onSubmit} />
+      </>
+    );
+  }
+
+  return <TonightView data={data} selectedName={selectedName} onSelect={onSelect} />;
 }
 
 // ---------------------------------------------------------------------------
