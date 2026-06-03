@@ -58,7 +58,26 @@ Seeing (FWHM, arcseconds) is forecast for sixteen 30-minute slots by a gradient
 (`api/ml/features.py`) built from a trailing weather history: instantaneous
 state, rolling temperature/humidity statistics over 30 min / 1 h / 3 h, a wind
 -shear delta, and cyclic encodings of hour-of-night and day-of-year. Missing
-values are propagated as NaN and handled natively by the trees.
+values are propagated as NaN and handled natively by the trees. Each slot
+selects the weather sample nearest its timestamp from a window spanning the
+recent past (for the rolling statistics) and the upcoming forecast hours, so
+the forecast genuinely varies across the night rather than repeating a single
+latest observation.
+
+**Quantile regression and confidence.** A single booster is trained with the
+pinball loss (`reg:quantileerror`) to predict the 10th, 50th, and 90th
+percentiles simultaneously. The median (P50) is the point estimate; the P10-P90
+interval width drives a per-slot confidence. Because the model's empirical
+spread is narrow (Stanford 3-year ERA5: P10-P90 width clusters around
+0.23-0.50 arcsec), confidence is a linear map anchored to that distribution
+
+    t          = (spread - s_tight) / (s_wide - s_tight)
+    confidence  = clip(c_max - t (c_max - c_min), c_min, c_max)
+
+with `s_tight = 0.23"`, `s_wide = 0.50"`, `c_min = 0.40`, `c_max = 0.95`. A
+narrow interval yields high confidence and a wide one low; a naive `1/spread`
+map saturates here and is not used. Legacy single-output models remain
+supported via a flat confidence.
 
 Two training paths are supported (`api/ml/train_xgb.py`):
 
@@ -76,7 +95,11 @@ Two training paths are supported (`api/ml/train_xgb.py`):
   is integrated to the turbulence integral `J = integral Cn2 dh`, converted to
   the Fried parameter `r0 = (0.423 k^2 sec(z) J)^(-3/5)` with `k = 2 pi / lambda`,
   and finally to seeing `eps = 0.98 lambda / r0`. The surface fields are mapped
-  into the same feature contract used at inference.
+  into the same feature contract used at inference. `api/ml/harvest_stanford.py`
+  orchestrates a resumable, cost-aware ERA5 pull (hourly single-level fields as
+  per-year timeseries plus pressure-level profiles in quarterly synoptic chunks)
+  and `api/ml/check_distribution.py` validates that the derived labels are
+  log-normal with a physically plausible median before training.
 
 When no trained model is present, the predictor returns a climatological
 constant so the pipeline degrades gracefully.
@@ -155,14 +178,21 @@ The predictor ships with the synthetic path enabled. To train:
 # Synthetic (no external data required)
 .venv/bin/python -m api.ml.train_xgb --output api/ml/models/seeing_model.json
 
-# ERA5 reanalysis (requires a configured ~/.cdsapirc from the Copernicus CDS)
-.venv/bin/python -m api.ml.era5 download --lat 31.96 --lon -111.6 \
-    --start 2023-01-01 --end 2023-03-31 --out data/era5.nc
-.venv/bin/python -m api.ml.era5 build --nc data/era5.nc --out data/era5.npz
-.venv/bin/python -m api.ml.train_xgb --source era5 --era5-cache data/era5.npz
+# ERA5 reanalysis (requires a configured ~/.cdsapirc from the Copernicus CDS).
+# Harvest builds a site-specific multi-year dataset (resumable, cost-aware);
+# the example below targets Stanford, CA.
+.venv/bin/python -m api.ml.harvest_stanford
+.venv/bin/python -m api.ml.check_distribution
+.venv/bin/python -m api.ml.train_xgb --source era5 \
+    --era5-cache api/ml/data/stanford_3yr.npz
 ```
 
-The ERA5 dependencies (`cdsapi`, `xarray`, `netCDF4`) are imported lazily and are only needed for this offline step, not by the API server.
+The quantile booster is regularized (depth 4, L2, min-child-weight) with early
+stopping. On the Stanford 3-year dataset (2192 nightly samples) it reaches
+MAE 0.12 arcsec on the median with an out-of-season chronological holdout, and
+the distribution check confirms log-normal labels with a ~1.3 arcsec median.
+
+The ERA5 dependencies (`cdsapi`, `xarray`, `netCDF4`) are imported lazily and are only needed for this offline step, not by the API server. Harvested datasets live under `api/ml/data/` (gitignored); only the trained `seeing_model.json` is committed and shipped.
 
 ## Deployment
 
@@ -197,9 +227,11 @@ zenith/
 │   │   ├── catalog.py       # live SIMBAD + Messier seed fallback
 │   │   └── seeing.py        # XGBoost inference + climatological fallback
 │   ├── ml/
-│   │   ├── features.py      # 24-feature vector
-│   │   ├── train_xgb.py     # synthetic + ERA5 training entrypoint
-│   │   └── era5.py          # ERA5 Cn^2 -> seeing label derivation
+│   │   ├── features.py          # 24-feature vector
+│   │   ├── train_xgb.py         # synthetic + ERA5 quantile training entrypoint
+│   │   ├── era5.py              # ERA5 Cn^2 -> seeing label derivation
+│   │   ├── harvest_stanford.py  # resumable, cost-aware ERA5 dataset builder
+│   │   └── check_distribution.py # seeing-label distribution validation
 │   └── integrations/weather.py
 ├── worker/                  # Cloudflare Worker + D1 schema
 ├── frontend/                # React + Vite + TS
