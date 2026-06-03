@@ -35,6 +35,92 @@ const CORS_HEADERS = {
 // CACHE_TTL below; uncached routes simply pass through.
 const PROXY_PREFIX = "/api/";
 
+// ---------------------------------------------------------------------------
+// Token-bucket rate limiting (KV-backed).
+//
+// The LLM endpoints are the only ones that cost real money (OpenRouter), so we
+// meter them per user. A single bucket of 10 tokens refills at 1 token / 5 min;
+// a plan-ai call spends 3 tokens, an explain call spends 1. That works out to a
+// sustained ceiling of ~3 plans per 15 minutes with a small burst allowance,
+// which is plenty for a human planning a night but cheap to bound.
+// ---------------------------------------------------------------------------
+const RL_MAX_TOKENS = 10;
+const RL_REFILL_SECONDS = 300; // one token every 5 minutes
+const RL_COST = { "/api/plan-ai": 3, "/api/explain": 1 };
+const RL_TTL_SECONDS = RL_MAX_TOKENS * RL_REFILL_SECONDS; // full bucket lifetime
+
+/**
+ * Spend `cost` tokens from the caller's bucket. Lazily refills based on elapsed
+ * wall-clock time since the last write, so no background timer is needed.
+ *
+ * @returns {Promise<{allowed: boolean, remaining: number, reset_in_seconds: number}>}
+ */
+async function rateLimit(userId, env, cost = 1) {
+  // No KV binding (e.g. local dev without --kv) → fail open rather than 500.
+  if (!env || !env.ZENITH_CACHE) {
+    return { allowed: true, remaining: RL_MAX_TOKENS, reset_in_seconds: 0 };
+  }
+
+  const key = `rl:${userId}`;
+  const now = Math.floor(Date.now() / 1000);
+
+  let state = await env.ZENITH_CACHE.get(key, { type: "json" });
+  if (!state || typeof state.tokens !== "number") {
+    state = { tokens: RL_MAX_TOKENS, last_refill: now };
+  }
+
+  // Refill whole tokens for each elapsed interval, carrying the remainder so
+  // partial intervals aren't lost.
+  const elapsed = Math.max(0, now - state.last_refill);
+  const refill = Math.floor(elapsed / RL_REFILL_SECONDS);
+  if (refill > 0) {
+    state.tokens = Math.min(RL_MAX_TOKENS, state.tokens + refill);
+    state.last_refill = state.last_refill + refill * RL_REFILL_SECONDS;
+  }
+
+  const allowed = state.tokens >= cost;
+  if (allowed) {
+    state.tokens -= cost;
+  }
+
+  // Seconds until the bucket holds enough tokens to satisfy `cost`.
+  const deficit = Math.max(0, cost - state.tokens);
+  let reset_in_seconds = 0;
+  if (deficit > 0) {
+    const untilNextToken = RL_REFILL_SECONDS - (now - state.last_refill);
+    reset_in_seconds = untilNextToken + (deficit - 1) * RL_REFILL_SECONDS;
+  }
+
+  await env.ZENITH_CACHE.put(key, JSON.stringify(state), {
+    expirationTtl: RL_TTL_SECONDS,
+  });
+
+  return { allowed, remaining: state.tokens, reset_in_seconds };
+}
+
+function rateLimitResponse(rl, message) {
+  return json(
+    {
+      error: "Rate limit exceeded",
+      remaining: rl.remaining,
+      reset_in_seconds: rl.reset_in_seconds,
+      message,
+    },
+    429,
+    { "Retry-After": String(rl.reset_in_seconds) },
+  );
+}
+
+// The caller identity for metering: prefer the client UUID, fall back to the
+// Cloudflare-provided edge IP so anonymous users are still bounded.
+function rateLimitKeyFor(request, body) {
+  return (
+    (body && body.user_id) ||
+    request.headers.get("cf-connecting-ip") ||
+    "anon"
+  );
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
@@ -57,6 +143,12 @@ export default {
     // before being proxied, so it can't be a transparent stream proxy.
     if (url.pathname === "/api/plan-ai" && request.method === "POST") {
       return handlePlanAi(request, url, env);
+    }
+
+    // explain is metered (cheap LLM call) and proxied through after the body
+    // is read for the rate-limit key.
+    if (url.pathname === "/api/explain" && request.method === "POST") {
+      return handleExplain(request, url, env);
     }
 
     const ttl = CACHE_TTL[url.pathname] ?? 0;
@@ -141,6 +233,15 @@ async function handlePlanAi(request, url, env) {
     body = {};
   }
 
+  // Meter the expensive planner call before doing any work.
+  const rl = await rateLimit(rateLimitKeyFor(request, body), env, RL_COST["/api/plan-ai"]);
+  if (!rl.allowed) {
+    return rateLimitResponse(
+      rl,
+      "Plan generation is limited to 3 requests per 15 minutes.",
+    );
+  }
+
   // Inject the user's liked/disliked targets so the planner can use them.
   if (env.DB && body && body.user_id) {
     try {
@@ -155,6 +256,39 @@ async function handlePlanAi(request, url, env) {
   const backend = (env.BACKEND_URL || "").replace(/\/$/, "");
   if (!backend) return json({ error: "BACKEND_URL not configured" }, 500);
 
+  const upstream = new Request(backend + url.pathname + url.search, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  try {
+    const resp = await fetch(upstream);
+    return withCors(resp, { "X-Zenith-Cache": "BYPASS" });
+  } catch (err) {
+    return json({ error: "backend unreachable", detail: String(err) }, 502);
+  }
+}
+
+async function handleExplain(request, url, env) {
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  const rl = await rateLimit(rateLimitKeyFor(request, body), env, RL_COST["/api/explain"]);
+  if (!rl.allowed) {
+    return rateLimitResponse(
+      rl,
+      "Follow-up questions are temporarily rate limited. Try again shortly.",
+    );
+  }
+
+  const backend = (env.BACKEND_URL || "").replace(/\/$/, "");
+  if (!backend) return json({ error: "BACKEND_URL not configured" }, 500);
+
+  // Body was consumed to read the rate-limit key, so re-serialize it.
   const upstream = new Request(backend + url.pathname + url.search, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
