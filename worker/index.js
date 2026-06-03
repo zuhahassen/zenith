@@ -14,7 +14,7 @@
  *   env.BACKEND_URL   - FastAPI origin
  */
 
-import { getFeedback, insertFeedback } from "./db.js";
+import { communityFavorites, getFeedback, insertFeedback } from "./db.js";
 
 // Per-route cache TTLs in seconds. Anything not listed is uncached.
 const CACHE_TTL = {
@@ -139,6 +139,12 @@ export default {
       return handleFeedback(request, env);
     }
 
+    // Crowdsourced target leaderboard, aggregated from D1 at the edge. Cached
+    // briefly in KV since it's identical for every visitor.
+    if (url.pathname === "/api/community-favorites" && request.method === "GET") {
+      return handleCommunityFavorites(request, url, env, ctx);
+    }
+
     // plan-ai needs its JSON body enriched with the user's stored feedback
     // before being proxied, so it can't be a transparent stream proxy.
     if (url.pathname === "/api/plan-ai" && request.method === "POST") {
@@ -223,6 +229,45 @@ async function handleFeedback(request, env) {
     return json({ error: "db write failed", detail: String(err) }, 500);
   }
   return json({ ok: true });
+}
+
+// 5-minute KV cache for the community leaderboard — the underlying votes
+// change slowly and the aggregate is identical for everyone.
+const COMMUNITY_TTL_SECONDS = 300;
+
+async function handleCommunityFavorites(request, url, env, ctx) {
+  if (!env.DB) return json({ error: "D1 not configured" }, 503);
+
+  const limit = clampInt(url.searchParams.get("limit"), 20, 1, 100);
+  const minVotes = clampInt(url.searchParams.get("min_votes"), 1, 1, 100);
+
+  const cacheKey = `v1:community:${limit}:${minVotes}`;
+  if (env.ZENITH_CACHE) {
+    const hit = await env.ZENITH_CACHE.get(cacheKey, { type: "json" });
+    if (hit) return json(hit, 200, { "X-Zenith-Cache": "HIT" });
+  }
+
+  let payload;
+  try {
+    payload = await communityFavorites(env.DB, { limit, minVotes });
+  } catch (err) {
+    return json({ error: "db read failed", detail: String(err) }, 500);
+  }
+
+  if (env.ZENITH_CACHE) {
+    ctx.waitUntil(
+      env.ZENITH_CACHE.put(cacheKey, JSON.stringify(payload), {
+        expirationTtl: COMMUNITY_TTL_SECONDS,
+      }),
+    );
+  }
+  return json(payload, 200, { "X-Zenith-Cache": "MISS" });
+}
+
+function clampInt(raw, fallback, min, max) {
+  const n = parseInt(raw, 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 }
 
 async function handlePlanAi(request, url, env) {

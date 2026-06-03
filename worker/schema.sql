@@ -53,3 +53,8 @@ CREATE TABLE IF NOT EXISTS target_feedback (
 
 CREATE INDEX IF NOT EXISTS idx_target_feedback_user
     ON target_feedback(user_id, timestamp DESC);
+
+-- Speeds up the crowdsourced community-favorites aggregation, which groups by
+-- target and reads the latest rating per (user, target).
+CREATE INDEX IF NOT EXISTS idx_target_feedback_target
+    ON target_feedback(target_name, user_id, timestamp DESC);
