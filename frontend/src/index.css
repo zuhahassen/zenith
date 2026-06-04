@@ -334,6 +334,7 @@ hr {
 }
 .community-row__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .community-row__score { font-family: var(--font-mono); color: var(--text-dim); font-size: 11px; }
+.community-empty { font-size: 11px; line-height: 1.5; color: var(--text-faint); }
 
 .status-block { display: flex; flex-direction: column; gap: 6px; }
 .status-row {

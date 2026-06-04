@@ -1,6 +1,10 @@
+import { useMemo } from "react";
 import { CalendarDays, Clock, MapPin, SlidersHorizontal, Telescope } from "lucide-react";
 import { useCommunityFavorites } from "../hooks/useCommunityFavorites";
 import type { PlanResponse } from "../types/zenith";
+
+// Normalize a target designation for matching across sources ("M 13" -> "M13").
+const normName = (s: string) => s.replace(/\s+/g, "").toUpperCase();
 
 export type View = "tonight" | "compare" | "calendar" | "history" | "settings";
 
@@ -19,8 +23,18 @@ interface Props {
 }
 
 export function Sidebar({ view, onNavigate, plan }: Props) {
-  const community = useCommunityFavorites(5);
-  const favorites = community.data?.favorites ?? [];
+  // Fetch a deep slice of the community leaderboard, then keep only the
+  // targets that are actually visible tonight from the user's location
+  // (the current plan already computed that visibility for these exact
+  // coordinates/date), so "Nearby favorites" is genuinely location-aware.
+  const community = useCommunityFavorites(50);
+  const favorites = useMemo(() => {
+    const all = community.data?.favorites ?? [];
+    const visible = plan?.targets ?? [];
+    if (visible.length === 0) return [];
+    const visibleSet = new Set(visible.map((t) => normName(t.name)));
+    return all.filter((f) => visibleSet.has(normName(f.target_name))).slice(0, 5);
+  }, [community.data, plan]);
 
   const darkWindow = darkWindowLabel(plan);
   const modelLoaded = plan?.seeing_model_loaded ?? null;
@@ -42,19 +56,23 @@ export function Sidebar({ view, onNavigate, plan }: Props) {
 
       <div className="sidebar__spacer" />
 
-      {favorites.length > 0 && (
+      {plan && (
         <div className="sidebar__block">
           <div className="label sidebar__block-title">Nearby favorites</div>
-          <div className="community-list">
-            {favorites.map((f) => (
-              <div className="community-row" key={f.target_name}>
-                <span className="community-row__name">{f.target_name}</span>
-                <span className="community-row__score">
-                  {f.net_score > 0 ? `+${f.net_score}` : f.net_score}
-                </span>
-              </div>
-            ))}
-          </div>
+          {favorites.length > 0 ? (
+            <div className="community-list">
+              {favorites.map((f) => (
+                <div className="community-row" key={f.target_name}>
+                  <span className="community-row__name">{f.target_name}</span>
+                  <span className="community-row__score">
+                    {f.net_score > 0 ? `+${f.net_score}` : f.net_score}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="community-empty">No community favorites above the horizon tonight.</div>
+          )}
         </div>
       )}
 
