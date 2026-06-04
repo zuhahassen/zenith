@@ -85,3 +85,41 @@ CREATE TABLE IF NOT EXISTS session_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_session_summaries_user_ts
     ON session_summaries(user_id, timestamp DESC);
+
+-- ---------------------------------------------------------------------------
+-- Authentication (magic-link email + stateless JWT sessions).
+-- All additive (pure CREATE … IF NOT EXISTS): guest mode keeps working with
+-- anonymous client UUIDs and never touches these tables.
+-- ---------------------------------------------------------------------------
+
+-- One row per signed-in account. id is a server-generated UUID; the same id
+-- becomes the user_id on session_summaries / target_feedback after a merge.
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,         -- UUID
+    email         TEXT UNIQUE NOT NULL,
+    created_at    TEXT NOT NULL,
+    display_name  TEXT,
+    last_seen     TEXT
+);
+
+-- Single-use magic-link tokens. Pruned implicitly by the 15-min expiry check;
+-- `used` flips to 1 the moment a token is verified so links can't be replayed.
+CREATE TABLE IF NOT EXISTS auth_tokens (
+    token       TEXT PRIMARY KEY,           -- 32-byte hex
+    email       TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,              -- ISO timestamp
+    used        INTEGER NOT NULL DEFAULT 0  -- 0 | 1, single-use
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_email ON auth_tokens(email);
+
+-- Issued JWT audit log, keyed by jti for future revocation. Tokens are not yet
+-- checked against this table on every request (expiry alone bounds them).
+CREATE TABLE IF NOT EXISTS sessions (
+    jti         TEXT PRIMARY KEY,           -- JWT ID
+    user_id     TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

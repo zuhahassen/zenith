@@ -10,6 +10,20 @@ compatibility_date = "2024-01-01"
 # Cloudflare Workers reject fetch() to a bare IP (error 1003).
 [vars]
 BACKEND_URL = "http://YOUR_BACKEND_HOST"
+# Public origin of the Pages frontend — used to build the magic-link URL in
+# sign-in emails (https://<APP_BASE_URL>/auth/verify?token=...).
+APP_BASE_URL = "https://zenith-cja.pages.dev"
+# From address for magic-link emails. The domain must have SPF/DKIM/DMARC
+# configured for MailChannels delivery.
+EMAIL_FROM = "noreply@yourdomain.example"
+
+# JWT_SECRET is NOT set here — it is a Worker *secret*, never committed.
+# Generate a strong 32-byte secret and store it with wrangler:
+#
+#   openssl rand -hex 32 | npx wrangler secret put JWT_SECRET --config=worker/wrangler.toml
+#
+# (or run `npx wrangler secret put JWT_SECRET` and paste the value when
+# prompted). It is used to HMAC-SHA256 sign session JWTs in worker/auth.js.
 
 [[kv_namespaces]]
 binding = "ZENITH_CACHE"

@@ -22,6 +22,13 @@ import {
   median,
   saveSession,
 } from "./db.js";
+import {
+  authenticate,
+  handleAuthMe,
+  handleAuthMerge,
+  handleAuthRequest,
+  handleAuthVerify,
+} from "./auth.js";
 
 // Per-route cache TTLs in seconds. Anything not listed is uncached.
 const CACHE_TTL = {
@@ -140,6 +147,12 @@ export default {
       return json({ error: "not found", path: url.pathname }, 404);
     }
 
+    // Authentication (magic link + JWT). Handled entirely at the edge against
+    // D1; never proxied to the FastAPI origin.
+    if (url.pathname.startsWith("/api/auth/")) {
+      return handleAuth(request, url, env);
+    }
+
     // Feedback is handled at the edge — it writes straight to D1 and never
     // touches the FastAPI origin.
     if (url.pathname === "/api/feedback" && request.method === "POST") {
@@ -243,6 +256,91 @@ async function handleFeedback(request, env) {
   return json({ ok: true });
 }
 
+// ---------------------------------------------------------------------------
+// Authentication routes (delegated to worker/auth.js).
+//
+// /api/auth/request is metered separately from the LLM token bucket: a strict
+// fixed window of 3 requests per 10 minutes per edge IP, so the endpoint can't
+// be used to flood an address with sign-in emails.
+// ---------------------------------------------------------------------------
+const AUTH_RL_MAX = 3;
+const AUTH_RL_WINDOW_SECONDS = 600;
+
+async function authRequestRateLimit(request, env) {
+  if (!env || !env.ZENITH_CACHE) return { allowed: true, reset_in_seconds: 0 };
+  const ip = request.headers.get("cf-connecting-ip") || "anon";
+  const key = `authrl:${ip}`;
+  const now = Math.floor(Date.now() / 1000);
+
+  let state = await env.ZENITH_CACHE.get(key, { type: "json" });
+  if (!state || typeof state.count !== "number" || now - state.window_start >= AUTH_RL_WINDOW_SECONDS) {
+    state = { count: 0, window_start: now };
+  }
+
+  const reset_in_seconds = AUTH_RL_WINDOW_SECONDS - (now - state.window_start);
+  if (state.count >= AUTH_RL_MAX) {
+    return { allowed: false, reset_in_seconds };
+  }
+
+  state.count += 1;
+  await env.ZENITH_CACHE.put(key, JSON.stringify(state), {
+    expirationTtl: AUTH_RL_WINDOW_SECONDS,
+  });
+  return { allowed: true, reset_in_seconds };
+}
+
+async function handleAuth(request, url, env) {
+  if (!env.DB) return json({ error: "D1 not configured" }, 503);
+
+  // POST /api/auth/request — issue + email a magic link (rate limited).
+  if (url.pathname === "/api/auth/request" && request.method === "POST") {
+    const rl = await authRequestRateLimit(request, env);
+    if (!rl.allowed) {
+      return json(
+        {
+          error: "Too many sign-in requests",
+          message: "Please wait a few minutes before requesting another link.",
+          reset_in_seconds: rl.reset_in_seconds,
+        },
+        429,
+        { "Retry-After": String(rl.reset_in_seconds) },
+      );
+    }
+    const body = await safeJson(request);
+    const res = await handleAuthRequest(env.DB, env, body);
+    return json(res.body, res.status);
+  }
+
+  // GET /api/auth/verify?token=… — consume the link, return a session JWT.
+  if (url.pathname === "/api/auth/verify" && request.method === "GET") {
+    const res = await handleAuthVerify(env.DB, env, url.searchParams.get("token"));
+    return json(res.body, res.status);
+  }
+
+  // GET /api/auth/me — resolve the bearer token to a user record.
+  if (url.pathname === "/api/auth/me" && request.method === "GET") {
+    const res = await handleAuthMe(env.DB, env, request.headers.get("Authorization"));
+    return json(res.body, res.status);
+  }
+
+  // POST /api/auth/merge — reassign guest data to the signed-in account.
+  if (url.pathname === "/api/auth/merge" && request.method === "POST") {
+    const body = await safeJson(request);
+    const res = await handleAuthMerge(env.DB, env, body);
+    return json(res.body, res.status);
+  }
+
+  return json({ error: "not found", path: url.pathname }, 404);
+}
+
+async function safeJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
+
 // 5-minute KV cache for the community leaderboard — the underlying votes
 // change slowly and the aggregate is identical for everyone.
 const COMMUNITY_TTL_SECONDS = 300;
@@ -289,6 +387,12 @@ async function handlePlanAi(request, url, env, ctx) {
   } catch {
     body = {};
   }
+
+  // If the caller is signed in, their account UUID overrides any guest id in
+  // the body, so feedback + history attach to the account rather than the
+  // anonymous browser id.
+  const claims = await authenticate(env, request.headers.get("Authorization"));
+  if (claims && claims.sub) body.user_id = claims.sub;
 
   // Meter the expensive planner call before doing any work.
   const rl = await rateLimit(rateLimitKeyFor(request, body), env, RL_COST["/api/plan-ai"]);
