@@ -87,11 +87,13 @@ export function Sidebar({ view, onNavigate, plan }: Props) {
               {modelLoaded == null ? "—" : modelLoaded ? "loaded" : "fallback"}
             </span>
           </div>
-          <div className="status-row">
-            <span className="status-row__k">Bortle</span>
-            <span className="status-row__v">
-              {plan ? `${plan.bortle_class} · ${bortleWord(plan.bortle_class)}` : "—"}
+          <div className="status-bortle">
+            <span className="status-bortle__main">
+              {plan ? `Bortle ${plan.bortle_class}` : "Bortle —"}
             </span>
+            {plan && (
+              <span className="status-bortle__sub">{bortleWord(plan.bortle_class)}</span>
+            )}
           </div>
           <div className="status-row">
             <span className="status-row__k">Darkness</span>

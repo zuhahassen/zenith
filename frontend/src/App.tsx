@@ -3,6 +3,7 @@ import axios from "axios";
 
 import { AuthPanel } from "./components/AuthPanel";
 import type { CalendarDeepLink } from "./components/CalendarView";
+import { FloatingChat } from "./components/FloatingChat";
 import { SetupForm } from "./components/SetupForm";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TonightView } from "./components/TonightView";
@@ -251,6 +252,7 @@ export default function App() {
                   rating={ratings[selectedTarget.name] ?? 0}
                   onRate={rate}
                   onViewCalendar={viewCalendar}
+                  onClose={() => setSelectedTarget(null)}
                 />
                 <Suspense fallback={null}>
                   <QAPanel planContext={planContextFor(data)} />
@@ -262,6 +264,8 @@ export default function App() {
           </aside>
         )}
       </div>
+
+      <FloatingChat />
     </div>
   );
 }

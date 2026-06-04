@@ -38,6 +38,7 @@ export function HistoryView({ onPlanAgain }: Props) {
       <table className="dtable">
         <thead>
           <tr>
+            <th className="caret-cell" />
             <th>Date</th>
             <th>Location</th>
             <th className="num">Targets</th>
@@ -58,6 +59,7 @@ export function HistoryView({ onPlanAgain }: Props) {
                   className={isOpen ? "selected" : ""}
                   onClick={() => setExpanded(isOpen ? null : s.id)}
                 >
+                  <td className="caret-cell">{isOpen ? "▾" : "▸"}</td>
                   <td className="mono" style={{ color: "var(--text-data)" }}>{fmtDate(s.timestamp)}</td>
                   <td>{s.location_name || coords(s)}</td>
                   <td className="num">{s.target_count ?? "—"}</td>
@@ -103,7 +105,7 @@ export function HistoryView({ onPlanAgain }: Props) {
                 </tr>
                 {isOpen && (
                   <tr className="history-detail">
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <div className="history-detail__mode">
                         {s.mode === "astrophotographer" ? "Astrophotographer" : "Visual observer"}
                         {s.aperture_mm ? ` · ${s.aperture_mm} mm` : ""}
@@ -112,6 +114,27 @@ export function HistoryView({ onPlanAgain }: Props) {
                       {s.session_summary && (
                         <div className="history-detail__summary">{s.session_summary}</div>
                       )}
+                      <div className="history-detail__actions">
+                        <button
+                          className="history-replan"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPlanAgain(s);
+                          }}
+                        >
+                          <RotateCcw size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+                          Plan this session again
+                        </button>
+                        <button
+                          className="history-collapse"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpanded(null);
+                          }}
+                        >
+                          ▴ Collapse
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )}

@@ -1,0 +1,21 @@
+Loading 7 site datasets from /Users/zuhahassen/Project_2026/zenith/api/ml/data ...
+  stanford   stanford_era5.npz      samples= 2192  lat=+37.428 lon=-122.170
+  maunakea   maunakea_era5.npz      samples= 2192  lat=+19.820 lon=-155.470
+  lapalma    lapalma_era5.npz       samples= 2192  lat=+28.760 lon=-17.890
+  haute_provence haute_provence_era5.npz samples= 2192  lat=+43.931 lon=+5.714
+  paranal    paranal_era5.npz       samples= 2192  lat=-24.628 lon=-70.404
+  sutherland sutherland_era5.npz    samples= 2192  lat=-32.378 lon=+20.811
+  kittpeak   kittpeak_era5.npz      samples= 2192  lat=+31.958 lon=-111.597
+Combined: train=12271  val=3073  features=29
+
+Per-site validation metrics:
+  stanford   n= 439  MAE=0.1162  R^2=0.3930  cover=0.715
+  maunakea   n= 439  MAE=0.0444  R^2=0.4743  cover=0.695
+  lapalma    n= 439  MAE=0.0991  R^2=0.4936  cover=0.711
+  haute_provence n= 439  MAE=0.0762  R^2=0.7514  cover=0.718
+  paranal    n= 439  MAE=0.0426  R^2=0.7398  cover=0.829
+  sutherland n= 439  MAE=0.0826  R^2=0.8737  cover=0.724
+  kittpeak   n= 439  MAE=0.0663  R^2=0.7295  cover=0.558
+  OVERALL    n=3073  MAE=0.0753  R^2=0.8291  cover=0.707
+
+Saved multi-site model -> api/ml/models/multisite_model.json

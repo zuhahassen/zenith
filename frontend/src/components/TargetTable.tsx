@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
-import { hhmm, typeInfo } from "../lib/format";
+import { hhmm, popularName, typeInfo, TYPE_FILTERS } from "../lib/format";
 import type { ScoredTarget } from "../types/zenith";
 
 const PAGE = 50;
-const TYPE_FILTERS = ["Gx", "EN", "PN", "GlCl", "OpCl"];
 
 type SortKey = "name" | "type" | "magnitude" | "max_alt_deg" | "score" | "window";
 type Dir = "asc" | "desc";
@@ -80,13 +79,13 @@ export function TargetTable({ targets, selectedName, onSelect, aiOrderedNames }:
           }}
         />
         <div className="type-toggles">
-          {TYPE_FILTERS.map((code) => (
+          {TYPE_FILTERS.map(({ code, label }) => (
             <button
               key={code}
               className={`type-toggle ${activeTypes.has(code) ? "on" : ""}`}
               onClick={() => toggleType(code)}
             >
-              {code}
+              {label}
             </button>
           ))}
         </div>
@@ -136,13 +135,15 @@ export function TargetTable({ targets, selectedName, onSelect, aiOrderedNames }:
                 >
                   <td className="caret-cell">{sel ? "▶" : ""}</td>
                   <td>
-                    <span className="obj-name">{t.name}</span>
-                    {t.common_name && (
-                      <span className="obj-common"> {t.common_name}</span>
-                    )}
+                    <div className="obj-cell">
+                      <span className="obj-name">{t.name}</span>
+                      {(t.common_name || popularName(t.name)) && (
+                        <span className="obj-common">{t.common_name || popularName(t.name)}</span>
+                      )}
+                    </div>
                   </td>
                   <td className="type-cell" style={{ color: info.color }}>
-                    {info.code}
+                    {info.short}
                   </td>
                   <td className="num">{t.magnitude != null ? t.magnitude.toFixed(1) : "—"}</td>
                   <td className="num">{t.max_alt_deg.toFixed(0)}°</td>

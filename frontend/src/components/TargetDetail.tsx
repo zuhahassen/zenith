@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ThumbsDown, ThumbsUp, Telescope } from "lucide-react";
+import { ThumbsDown, ThumbsUp, Telescope, X } from "lucide-react";
 import {
   airmassLabel,
   durationLabel,
@@ -22,6 +22,8 @@ interface Props {
   onRate: (name: string, rating: number) => void;
   // Deep-link into the multi-night calendar for this target.
   onViewCalendar?: (targetName: string) => void;
+  // Collapse the detail panel back to its empty placeholder state.
+  onClose?: () => void;
 }
 
 export function TargetDetail({
@@ -32,6 +34,7 @@ export function TargetDetail({
   rating,
   onRate,
   onViewCalendar,
+  onClose,
 }: Props) {
   const info = typeInfo(target.kind);
   const aiItem = aiPlan?.ordered_targets.find((t) => t.name === target.name);
@@ -76,6 +79,11 @@ export function TargetDetail({
           >
             <ThumbsDown size={14} fill={rating === -1 ? "currentColor" : "none"} />
           </button>
+          {onClose && (
+            <button className="icon-btn tdetail__close" aria-label="Close details" onClick={onClose}>
+              <X size={15} />
+            </button>
+          )}
         </div>
       </div>
 

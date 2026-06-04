@@ -8,29 +8,56 @@ import type { ObjectKind } from "../types/zenith";
 // plus a human label and a muted palette color (see index.css design system).
 
 export interface TypeInfo {
-  code: string; // Gx, EN, RN, PN, GlCl, OpCl, SNR, ...
+  code: string; // Gx, EN, RN, PN, GlCl, OpCl, SNR, ... (compact, used in filters)
+  short: string; // friendly compact label for table rows
   label: string; // full human label
-  color: string; // muted hex matching the new palette
+  color: string; // muted hex matching the new palette (no teal/cyan)
 }
 
-// Object-type palette — matches the --color-* CSS variables in index.css.
+// Object-type palette — muted, warm-neutral tones on navy. Deliberately free of
+// teal/cyan so the UI reads as the white + warm-white accent system.
 // Literal hexes (not var()) so they also work as SVG presentation attributes.
 const STEEL = "#3d5080"; // --color-other
 const TYPE_TABLE: Record<string, TypeInfo> = {
-  Galaxy: { code: "Gx", label: "Galaxy", color: "#6b9fd4" }, // --color-galaxy
-  Nebula: { code: "EN", label: "Emission nebula", color: "#6bc4c4" }, // --color-nebula
-  EmissionNebula: { code: "EN", label: "Emission nebula", color: "#6bc4c4" },
-  ReflectionNebula: { code: "RN", label: "Reflection nebula", color: "#8aabad" }, // --color-cluster
-  PlanetaryNebula: { code: "PN", label: "Planetary nebula", color: "#6bc4c4" },
-  GlCl: { code: "GlCl", label: "Globular cluster", color: "#d4d4f0" }, // --color-globular
-  OpenCl: { code: "OpCl", label: "Open cluster", color: "#8aabad" }, // --color-cluster
-  SNR: { code: "SNR", label: "Supernova remnant", color: "#b08a8a" },
-  Unknown: { code: "—", label: "Unknown", color: STEEL },
+  Galaxy: { code: "Gx", short: "Galaxy", label: "Galaxy", color: "#9fb0d0" },
+  Nebula: { code: "EN", short: "Nebula", label: "Emission nebula", color: "#d0c3b0" },
+  EmissionNebula: { code: "EN", short: "Nebula", label: "Emission nebula", color: "#d0c3b0" },
+  ReflectionNebula: { code: "RN", short: "Nebula", label: "Reflection nebula", color: "#c4c0b2" },
+  PlanetaryNebula: { code: "PN", short: "Plan. Neb.", label: "Planetary nebula", color: "#c9b6c4" },
+  GlCl: { code: "GlCl", short: "Globular", label: "Globular cluster", color: "#d4d4f0" },
+  OpenCl: { code: "OpCl", short: "Open Cluster", label: "Open cluster", color: "#aab2c0" },
+  SNR: { code: "SNR", short: "SN Remnant", label: "Supernova remnant", color: "#c2a3a3" },
+  Unknown: { code: "—", short: "—", label: "Unknown", color: STEEL },
 };
 
 export function typeInfo(kind: ObjectKind | string | null | undefined): TypeInfo {
   if (!kind) return TYPE_TABLE.Unknown;
-  return TYPE_TABLE[kind] ?? { code: String(kind).slice(0, 4), label: String(kind), color: STEEL };
+  const s = String(kind);
+  return TYPE_TABLE[kind] ?? { code: s.slice(0, 4), short: s, label: s, color: STEEL };
+}
+
+// Friendly, plain-language labels for the object-type filter buttons. The
+// `code` is what the table filter actually matches against (see typeInfo).
+export const TYPE_FILTERS: { code: string; label: string }[] = [
+  { code: "Gx", label: "Galaxies" },
+  { code: "EN", label: "Nebulae" },
+  { code: "PN", label: "Planetary Nebulae" },
+  { code: "GlCl", label: "Globular Clusters" },
+  { code: "OpCl", label: "Open Clusters" },
+];
+
+// Popular common names for well-known deep-sky objects, shown as a subtle
+// secondary label in the table when the catalog doesn't already supply one.
+// Keyed by the designation with spaces removed ("M 3" -> "M3").
+const NICKNAMES: Record<string, string> = {
+  M3: "Canes Venatici Cluster",
+  M5: "Rose Cluster",
+  M13: "Hercules Cluster",
+};
+
+export function popularName(designation: string | null | undefined): string | null {
+  if (!designation) return null;
+  return NICKNAMES[designation.replace(/\s+/g, "").toUpperCase()] ?? null;
 }
 
 // --- Seeing quality ---------------------------------------------------------
@@ -41,16 +68,17 @@ export interface SeeingQuality {
 }
 
 export function seeingQuality(value: number): SeeingQuality {
-  if (value < 1.5) return { color: "var(--good)", label: "GOOD" };
-  if (value <= 2.5) return { color: "var(--avg)", label: "AVERAGE" };
+  // "GOOD" uses the white accent; lesser tiers stay muted neutral.
+  if (value < 1.5) return { color: "rgba(255,255,255,0.85)", label: "GOOD" };
+  if (value <= 2.5) return { color: "var(--text-dim)", label: "AVERAGE" };
   return { color: "var(--poor)", label: "POOR" };
 }
 
 // Literal hex variants for SVG presentation attributes (var() doesn't resolve).
 export function seeingHex(value: number): string {
-  if (value < 1.5) return "#4a9e6a"; // --good
-  if (value <= 2.5) return "#7a8e5a"; // --avg
-  return "#8e4a4a"; // --poor
+  if (value < 1.5) return "#ffffff"; // GOOD — white accent
+  if (value <= 2.5) return "#8a9bc4"; // AVERAGE — --text-dim
+  return "#8e4a4a"; // POOR — --poor
 }
 
 // --- Coordinates ------------------------------------------------------------
