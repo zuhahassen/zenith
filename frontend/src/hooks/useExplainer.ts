@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import axios from "axios";
+import { authHeaders } from "../lib/auth";
 import type { ChatMessage, ExplainResponse } from "../types/zenith";
 
 // Empty in dev (Vite proxies /api -> :8000). In production this is the
@@ -19,7 +20,7 @@ export function useExplainer() {
       const { data } = await axios.post<ExplainResponse>(
         `${API_BASE}/api/explain`,
         { question, plan_context, history },
-        { timeout: 30_000 },
+        { timeout: 30_000, headers: { ...authHeaders() } },
       );
       return data;
     },

@@ -1,14 +1,18 @@
-import { Suspense, lazy, useState } from "react";
-import { Settings as SettingsIcon } from "lucide-react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import axios from "axios";
 
+import { AuthPanel } from "./components/AuthPanel";
 import { SetupForm } from "./components/SetupForm";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TonightView } from "./components/TonightView";
 import { TargetDetail } from "./components/TargetDetail";
 import { usePlan } from "./hooks/usePlan";
+import { getGuestId, getUserEmail, isSignedIn, setJWT } from "./lib/auth";
 import { getUserId, submitFeedback } from "./lib/feedback";
 import { loadSettings, resetSettings, saveSettings, type ZenithSettings } from "./lib/settings";
 import type { HistorySession, PlanRequest, PlanResponse, ScoredTarget } from "./types/zenith";
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 const CompareView = lazy(() =>
   import("./components/CompareView").then((m) => ({ default: m.CompareView })),
@@ -28,7 +32,66 @@ export default function App() {
   const [selectedTarget, setSelectedTarget] = useState<ScoredTarget | null>(null);
   const [ratings, setRatings] = useState<Record<string, number>>({});
 
+  // Auth state — purely additive. `authTick` is bumped to force a re-read of
+  // localStorage after sign-in/sign-out without threading state everywhere.
+  const [authTick, setAuthTick] = useState(0);
+  const signedIn = useMemo(() => isSignedIn(), [authTick]);
+  const userEmail = useMemo(() => getUserEmail(), [authTick]);
+  const [authStatus, setAuthStatus] = useState<string | null>(null);
+
   const data: PlanResponse | undefined = plan.data;
+
+  // Handle the magic-link landing at /auth/verify?token=… exactly once on
+  // mount: exchange the token for a JWT, merge guest data, then clean the URL.
+  useEffect(() => {
+    if (window.location.pathname !== "/auth/verify") return;
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (!token) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const guestId = getGuestId(); // capture the anonymous id before switching
+        const { data: verified } = await axios.get(
+          `${API_BASE}/api/auth/verify`,
+          { params: { token }, timeout: 12_000 },
+        );
+        if (cancelled || !verified?.token) {
+          if (!cancelled) setAuthStatus("That sign-in link is invalid or expired.");
+          window.history.replaceState({}, "", "/");
+          return;
+        }
+        setJWT(verified.token);
+        // Best-effort guest → account migration; never blocks sign-in.
+        try {
+          await axios.post(
+            `${API_BASE}/api/auth/merge`,
+            { guest_id: guestId, jwt: verified.token },
+            { timeout: 10_000 },
+          );
+        } catch {
+          /* migration is optional */
+        }
+        window.history.replaceState({}, "", "/");
+        setAuthTick((t) => t + 1);
+        setAuthStatus("Signed in successfully");
+      } catch {
+        if (!cancelled) setAuthStatus("That sign-in link is invalid or expired.");
+        window.history.replaceState({}, "", "/");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Clear the transient top-bar status message after 3 seconds.
+  useEffect(() => {
+    if (!authStatus) return;
+    const id = window.setTimeout(() => setAuthStatus(null), 3000);
+    return () => window.clearTimeout(id);
+  }, [authStatus]);
 
   function submit(req: PlanRequest, label: string) {
     setSelectedTarget(null);
@@ -85,10 +148,13 @@ export default function App() {
         <span className="topbar__sep">·</span>
         <span className="topbar__sub">Observation Planner</span>
         <span className="topbar__spacer" />
+        {authStatus && <span className="topbar__authstatus">{authStatus}</span>}
         {locLabel && <span className="topbar__loc">{locLabel}</span>}
-        <button className="topbar__gear" aria-label="Settings" onClick={() => setView("settings")}>
-          <SettingsIcon size={15} />
-        </button>
+        <AuthPanel
+          signedIn={signedIn}
+          email={userEmail}
+          onChange={() => setAuthTick((t) => t + 1)}
+        />
       </header>
 
       <div className={`layout ${showRightPanel ? "" : "layout--setup"}`}>

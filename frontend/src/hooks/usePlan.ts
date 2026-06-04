@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import axios from "axios";
+import { authHeaders } from "../lib/auth";
 import type { PlanRequest, PlanResponse } from "../types/zenith";
 
 // Empty in dev (Vite proxies /api -> :8000). In production this is the
@@ -18,7 +19,7 @@ export function usePlan() {
         const { data } = await axios.post<PlanResponse>(
           `${API_BASE}/api/plan-ai`,
           req,
-          { timeout: 60_000 },
+          { timeout: 60_000, headers: { ...authHeaders() } },
         );
         return data;
       } catch (err) {

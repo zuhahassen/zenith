@@ -156,6 +156,57 @@ button.primary:hover { background: #324b61; }
 }
 .topbar__gear:hover { color: var(--accent-text); background: none; }
 
+/* Auth — understated sign-in affordance in the top bar */
+.topbar__authstatus {
+  color: var(--good);
+  font-size: 12px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+.auth-bar { display: inline-flex; align-items: center; gap: 10px; }
+.auth-bar__email {
+  color: var(--text-data);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.auth-bar__link {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+}
+.auth-bar__link:hover { color: var(--accent-text); background: none; }
+
+/* Inline sign-in panel — drops below the top bar, never a modal */
+.auth-panel {
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  height: 60px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.auth-panel__form { display: flex; align-items: center; gap: 10px; width: 100%; }
+.auth-panel__input { width: 280px; max-width: 50%; }
+.auth-panel__btn {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--accent-text);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.auth-panel__btn:disabled { opacity: 0.6; cursor: default; }
+.auth-panel__msg { color: var(--text); font-size: 13px; }
+.auth-panel__err { color: var(--poor); font-size: 12px; }
+
 /* Layout: persistent three panels after first plan */
 .layout {
   display: grid;
