@@ -34,6 +34,7 @@ import {
 const CACHE_TTL = {
   "/api/targets": 60 * 60 * 24, // 24 hr — catalog is slow-changing
   "/api/weather": 60 * 60,      // 1 hr  — Open-Meteo refreshes hourly
+  "/api/featured-images": 60 * 60 * 24, // 24 hr — curated landing gallery
   // /api/plan is intentionally NOT cached: plans are per-user, per-session.
 };
 

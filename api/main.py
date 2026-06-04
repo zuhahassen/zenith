@@ -682,6 +682,52 @@ async def get_target_calendar_feed(
     )
 
 
+# ---------------------------------------------------------------------------
+# Featured imagery — a curated gallery of iconic deep-sky objects with rich
+# Hubble Legacy Archive color coverage, used as the landing-page backdrop. The
+# coordinates are hard-coded (J2000) so this never needs SESAME resolution; the
+# images come straight from the same MAST/HLA + SkyView pipeline as the target
+# cards. Edge-cached for 24h (see the Worker), so it's a single slow batch.
+# ---------------------------------------------------------------------------
+
+_FEATURED_TARGETS: list[dict] = [
+    {"name": "M 16", "common_name": "Eagle Nebula", "ra": 274.700, "dec": -13.807},
+    {"name": "M 42", "common_name": "Orion Nebula", "ra": 83.822, "dec": -5.391},
+    {"name": "M 51", "common_name": "Whirlpool Galaxy", "ra": 202.470, "dec": 47.195},
+    {"name": "M 104", "common_name": "Sombrero Galaxy", "ra": 189.998, "dec": -11.623},
+    {"name": "M 57", "common_name": "Ring Nebula", "ra": 283.396, "dec": 33.029},
+    {"name": "M 27", "common_name": "Dumbbell Nebula", "ra": 299.901, "dec": 22.721},
+    {"name": "M 1", "common_name": "Crab Nebula", "ra": 83.633, "dec": 22.015},
+    {"name": "M 20", "common_name": "Trifid Nebula", "ra": 270.675, "dec": -23.030},
+    {"name": "M 8", "common_name": "Lagoon Nebula", "ra": 270.924, "dec": -24.386},
+    {"name": "NGC 6302", "common_name": "Butterfly Nebula", "ra": 258.840, "dec": -37.103},
+]
+
+
+@app.get("/api/featured-images")
+async def get_featured_images(response: Response) -> dict:
+    """Curated gallery of iconic deep-sky images for the landing backdrop.
+
+    Returns ``{"images": [{name, common_name, url, source}, …]}`` for the
+    targets that resolved to a renderable cutout, preserving the curated order.
+    Best-effort: a failed fetch simply drops that entry.
+    """
+    images = await _mast.get_reference_images_batch(_FEATURED_TARGETS)
+    common = {t["name"]: t["common_name"] for t in _FEATURED_TARGETS}
+    out = []
+    for t in _FEATURED_TARGETS:  # preserve curated order
+        img = images.get(t["name"])
+        if img:
+            out.append({
+                "name": t["name"],
+                "common_name": common.get(t["name"]),
+                "url": img["url"],
+                "source": img["source"],
+            })
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return {"images": out}
+
+
 async def _calendar_seeing_by_date(
     lat: float, lon: float, start: date_cls, end: date_cls,
 ) -> dict[str, float]:

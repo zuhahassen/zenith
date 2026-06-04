@@ -4,6 +4,7 @@ import axios from "axios";
 import { AuthPanel } from "./components/AuthPanel";
 import type { CalendarDeepLink } from "./components/CalendarView";
 import { FloatingChat } from "./components/FloatingChat";
+import { LandingHero } from "./components/LandingHero";
 import { SetupForm } from "./components/SetupForm";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TonightView } from "./components/TonightView";
@@ -61,6 +62,19 @@ export default function App() {
   const signedIn = useMemo(() => isSignedIn(), [authTick]);
   const userEmail = useMemo(() => getUserEmail(), [authTick]);
   const [authStatus, setAuthStatus] = useState<string | null>(null);
+
+  // Landing hero — shown once per browser session, but never on the magic-link
+  // verification landing (/auth/verify) so sign-in completes uninterrupted.
+  const [showLanding, setShowLanding] = useState(
+    () =>
+      window.location.pathname !== "/auth/verify" &&
+      sessionStorage.getItem("zenith_seen_landing") !== "1",
+  );
+
+  function enterApp() {
+    sessionStorage.setItem("zenith_seen_landing", "1");
+    setShowLanding(false);
+  }
 
   const data: PlanResponse | undefined = plan.data;
 
@@ -297,6 +311,8 @@ export default function App() {
       </div>
 
       <FloatingChat />
+
+      {showLanding && <LandingHero onEnter={enterApp} />}
     </div>
   );
 }

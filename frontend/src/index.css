@@ -1121,3 +1121,109 @@ hr {
 /* misc */
 .err { color: var(--poor); font-family: var(--font-mono); font-size: 12px; }
 .center-load { padding: 40px; color: var(--text-dim); text-align: center; }
+
+/* ==========================================================================
+   Landing — minimal editorial intro, swipe up to enter
+   ========================================================================== */
+
+.landing {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.75s cubic-bezier(0.7, 0, 0.2, 1), opacity 0.75s ease;
+}
+.landing--exit { transform: translateY(-100%); opacity: 0; }
+
+/* A single, very faint glow keeps the screen from feeling flat without adding noise. */
+.landing::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(70% 55% at 50% 38%, rgba(106, 159, 212, 0.07), transparent 70%);
+  pointer-events: none;
+}
+
+.landing__content {
+  position: relative;
+  z-index: 2;
+  margin: auto;
+  text-align: center;
+  padding: 0 24px;
+  max-width: 620px;
+}
+.landing__content > * { animation: landing-rise 0.9s ease both; }
+.landing__content > *:nth-child(2) { animation-delay: 0.07s; }
+.landing__content > *:nth-child(3) { animation-delay: 0.14s; }
+.landing__content > *:nth-child(4) { animation-delay: 0.21s; }
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.landing__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.landing__brand {
+  font-family: var(--font-heading);
+  font-weight: 400;
+  font-size: clamp(56px, 13vw, 150px);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  margin: 14px 0 0;
+}
+.landing__rule {
+  width: 56px;
+  height: 1px;
+  margin: 26px auto;
+  background: var(--text-faint);
+}
+.landing__tagline {
+  font-family: var(--font-ui);
+  font-size: clamp(14px, 1.8vw, 17px);
+  line-height: 1.7;
+  color: var(--text-dim);
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+/* Swipe-up affordance. */
+.landing__enter {
+  position: absolute;
+  bottom: 36px;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+}
+.landing__chev { animation: landing-bob 1.8s ease-in-out infinite; }
+.landing__enter-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+@keyframes landing-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(-6px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing__chev,
+  .landing__content > * { animation: none; }
+}
