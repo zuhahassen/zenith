@@ -147,8 +147,8 @@ export function TargetTable({ targets, selectedName, onSelect, aiOrderedNames }:
                   <td className="num">{t.magnitude != null ? t.magnitude.toFixed(1) : "—"}</td>
                   <td className="num">{t.max_alt_deg.toFixed(0)}°</td>
                   <td className="num">{t.score.toFixed(2)}</td>
-                  <td className="num">
-                    {t.window_start ? `${hhmm(t.window_start)}–${hhmm(t.window_end).slice(0, 2)}` : "—"}
+                  <td className="win-cell">
+                    {t.window_start ? `${hhmm(t.window_start)}–${hhmm(t.window_end)}` : "—"}
                   </td>
                 </tr>
               );
@@ -159,14 +159,14 @@ export function TargetTable({ targets, selectedName, onSelect, aiOrderedNames }:
 
       {pages > 1 && (
         <div className="pager">
-          <button disabled={clampedPage === 0} onClick={() => setPage(clampedPage - 1)}>
-            ← Prev
+          <button className="pager__btn" disabled={clampedPage === 0} onClick={() => setPage(clampedPage - 1)}>
+            ← prev
           </button>
-          <span className="mono">
-            {clampedPage + 1} / {pages} · {filtered.length} targets
+          <span className="pager__range mono">
+            {clampedPage * PAGE + 1}–{Math.min(clampedPage * PAGE + PAGE, filtered.length)} of {filtered.length}
           </span>
-          <button disabled={clampedPage >= pages - 1} onClick={() => setPage(clampedPage + 1)}>
-            Next →
+          <button className="pager__btn" disabled={clampedPage >= pages - 1} onClick={() => setPage(clampedPage + 1)}>
+            next →
           </button>
         </div>
       )}
