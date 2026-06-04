@@ -331,13 +331,15 @@ zenith/
 | Multi-night target calendar   | Planned     | Forward scan of observability for a chosen target            |
 
 ## References
-- Ni, B. et al. (2022). *Data-driven seeing prediction for the LAMOST telescope.* — the 
-24-feature vector and tree-model approach in `api/ml/features.py` and `api/pipeline/seeing.
-py` follow this paper.
-- Tatarski, V. I. (1961). *Wave Propagation in a Turbulent Medium.* — the Cn^2 structure-constant formulation.
-- Dewan, E. M. et al. (1993). *A model for C_n^2 (optical turbulence) profiles using radiosonde data.* — the wind-shear outer-scale model.
-- Fried, D. L. (1966). *Optical resolution through a randomly inhomogeneous medium.* — the Fried parameter and seeing relation.
-- [Astropy](https://www.astropy.org/) — positional astronomy.
-- [Astroquery](https://astroquery.readthedocs.io/) — SIMBAD TAP queries.
-- [Open-Meteo](https://open-meteo.com/) — hourly weather.
-- [ECMWF ERA5](https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5) — reanalysis for seeing-label derivation.
+- Ni, B., Jia, P., et al. (2022). *Data-driven seeing prediction for the LAMOST telescope.* MNRAS. — The 24-feature vector, trailing weather windows, and tree-model approach in `api/ml/features.py` and `api/pipeline/seeing.py`.
+- Osborn, J., et al. (2018). *Forecasting atmospheric optical turbulence conditions for astronomy.* MNRAS. — Using macro-meteorological forecasts to infer local boundary-layer seeing.
+- Tatarski, V. I. (1961). *Wave Propagation in a Turbulent Medium.* McGraw-Hill. — The `Cn^2` refractive-index structure-constant formulation used in `api/ml/era5.py`.
+- Dewan, E. M., et al. (1993). *A model for `Cn^2` profiles using radiosonde data.* Air Force Phillips Laboratory. — Outer-scale (`L0`) parameterization from vertical wind-shear deltas.
+- Fried, D. L. (1966). *Optical resolution through a randomly inhomogeneous medium.* JOSA. — The `r0` coherence-diameter to FWHM relation (`eps = 0.98 lambda / r0`).
+- Meeus, J. (1998). *Astronomical Algorithms* (2nd ed.). Willmann-Bell. — Horizontal coordinate transforms and angular-separation math in `api/pipeline/visibility.py`.
+- Cinzano, P., Falchi, F., & Elvidge, C. D. (2001). *The first World Atlas of the artificial night sky brightness.* MNRAS. — Coordinates to night-sky luminance, seeding the Bortle-class metric.
+- Crumey, A. D. B. (2014). *Human Contrast Threshold and Visibility of Deep-Sky Objects.* MNRAS. — Magnitude/area-vs-background contrast driving the surface-brightness penalty in `api/pipeline/scorer.py`.
+- [Astropy](https://www.astropy.org/) — coordinate frames, time grids, and horizontal ephemeris transforms.
+- [Astroquery](https://astroquery.readthedocs.io/) — live latitude-filtered TAP queries to CDS SIMBAD.
+- [Open-Meteo](https://open-meteo.com/) — hourly surface + multi-level pressure weather at runtime.
+- [ECMWF ERA5](https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5) — reanalysis profiles for offline multi-site training.
