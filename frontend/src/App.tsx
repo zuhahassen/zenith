@@ -8,13 +8,16 @@ import { TargetDetail } from "./components/TargetDetail";
 import { usePlan } from "./hooks/usePlan";
 import { getUserId, submitFeedback } from "./lib/feedback";
 import { loadSettings, resetSettings, saveSettings, type ZenithSettings } from "./lib/settings";
-import type { PlanRequest, PlanResponse, ScoredTarget } from "./types/zenith";
+import type { HistorySession, PlanRequest, PlanResponse, ScoredTarget } from "./types/zenith";
 
 const CompareView = lazy(() =>
   import("./components/CompareView").then((m) => ({ default: m.CompareView })),
 );
 const SettingsView = lazy(() =>
   import("./components/SettingsView").then((m) => ({ default: m.SettingsView })),
+);
+const HistoryView = lazy(() =>
+  import("./components/HistoryView").then((m) => ({ default: m.HistoryView })),
 );
 const QAPanel = lazy(() => import("./components/QAPanel").then((m) => ({ default: m.QAPanel })));
 
@@ -42,7 +45,24 @@ export default function App() {
     setSettings(next);
     saveSettings(next);
     setView("tonight");
-    plan.mutate({ ...req, user_id: getUserId() });
+    plan.mutate({ ...req, user_id: getUserId(), location_name: label });
+  }
+
+  // Re-run a past session: pre-fill the form defaults from the stored summary
+  // and immediately generate a fresh plan for the same site + rig.
+  function planAgain(session: HistorySession) {
+    if (session.lat == null || session.lon == null) return;
+    const label = session.location_name || `${session.lat.toFixed(2)}, ${session.lon.toFixed(2)}`;
+    submit(
+      {
+        lat: session.lat,
+        lon: session.lon,
+        aperture_mm: session.aperture_mm ?? settings.aperture_mm,
+        mode: session.mode,
+        bortle_class: session.bortle ?? null,
+      },
+      label,
+    );
   }
 
   function rate(name: string, rating: number) {
@@ -84,6 +104,7 @@ export default function App() {
             selectedName={selectedTarget?.name ?? null}
             onSelect={setSelectedTarget}
             onSubmit={submit}
+            onPlanAgain={planAgain}
             onSaveSettings={persistSettings}
             onResetSettings={() => persistSettings(resetSettings())}
           />
@@ -126,6 +147,7 @@ interface MainContentProps {
   selectedName: string | null;
   onSelect: (t: ScoredTarget) => void;
   onSubmit: (req: PlanRequest, label: string) => void;
+  onPlanAgain: (session: HistorySession) => void;
   onSaveSettings: (s: ZenithSettings) => void;
   onResetSettings: () => void;
 }
@@ -139,6 +161,7 @@ function MainContent({
   selectedName,
   onSelect,
   onSubmit,
+  onPlanAgain,
   onSaveSettings,
   onResetSettings,
 }: MainContentProps) {
@@ -157,7 +180,9 @@ function MainContent({
     return (
       <>
         <div className="panel-title">History</div>
-        <div className="center-load">No past sessions</div>
+        <Suspense fallback={<div className="center-load">Loading…</div>}>
+          <HistoryView onPlanAgain={onPlanAgain} />
+        </Suspense>
       </>
     );
   }

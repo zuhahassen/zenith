@@ -14,7 +14,14 @@
  *   env.BACKEND_URL   - FastAPI origin
  */
 
-import { communityFavorites, getFeedback, insertFeedback } from "./db.js";
+import {
+  communityFavorites,
+  getFeedback,
+  getHistory,
+  insertFeedback,
+  median,
+  saveSession,
+} from "./db.js";
 
 // Per-route cache TTLs in seconds. Anything not listed is uncached.
 const CACHE_TTL = {
@@ -145,10 +152,15 @@ export default {
       return handleCommunityFavorites(request, url, env, ctx);
     }
 
+    // Per-user session history, read from D1 at the edge. Cached briefly in KV.
+    if (url.pathname === "/api/history" && request.method === "GET") {
+      return handleHistory(request, url, env, ctx);
+    }
+
     // plan-ai needs its JSON body enriched with the user's stored feedback
     // before being proxied, so it can't be a transparent stream proxy.
     if (url.pathname === "/api/plan-ai" && request.method === "POST") {
-      return handlePlanAi(request, url, env);
+      return handlePlanAi(request, url, env, ctx);
     }
 
     // explain is metered (cheap LLM call) and proxied through after the body
@@ -270,7 +282,7 @@ function clampInt(raw, fallback, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-async function handlePlanAi(request, url, env) {
+async function handlePlanAi(request, url, env, ctx) {
   let body = {};
   try {
     body = await request.json();
@@ -308,10 +320,81 @@ async function handlePlanAi(request, url, env) {
   });
   try {
     const resp = await fetch(upstream);
+    // Record a lightweight history summary, best-effort and off the response
+    // path: a D1 write failure must never break plan generation.
+    if (
+      env.DB &&
+      body.user_id &&
+      resp.ok &&
+      (resp.headers.get("content-type") || "").includes("application/json")
+    ) {
+      ctx.waitUntil(saveSessionFromResponse(env.DB, body, resp.clone()));
+    }
     return withCors(resp, { "X-Zenith-Cache": "BYPASS" });
   } catch (err) {
     return json({ error: "backend unreachable", detail: String(err) }, 502);
   }
+}
+
+// Parse a /api/plan-ai response and persist a summary row for the History view.
+async function saveSessionFromResponse(db, requestBody, resp) {
+  try {
+    const plan = await resp.json();
+    const seeing = (plan.seeing_forecast || [])
+      .map((s) => s && s.predicted_seeing_arcsec)
+      .filter((v) => typeof v === "number");
+    const top = plan.ai_plan && plan.ai_plan.ordered_targets && plan.ai_plan.ordered_targets[0];
+    await saveSession(db, {
+      user_id: requestBody.user_id,
+      timestamp: new Date().toISOString(),
+      location_name: requestBody.location_name ?? null,
+      lat: requestBody.lat ?? plan.request?.lat ?? null,
+      lon: requestBody.lon ?? plan.request?.lon ?? null,
+      aperture_mm: requestBody.aperture_mm ?? plan.request?.aperture_mm ?? null,
+      target_count: plan.count ?? null,
+      moon_illumination: plan.moon_illumination ?? null,
+      bortle: plan.bortle_class ?? null,
+      seeing_median: median(seeing),
+      top_target: top?.name ?? null,
+      top_target_type: top?.object_type ?? null,
+      session_summary: plan.ai_plan?.session_summary ?? null,
+      mode: requestBody.mode ?? plan.request?.mode ?? "observer",
+    });
+  } catch {
+    /* best-effort: ignore parse/write errors */
+  }
+}
+
+// 5-minute KV cache for a user's history — it only changes when they plan.
+const HISTORY_TTL_SECONDS = 300;
+
+async function handleHistory(request, url, env, ctx) {
+  if (!env.DB) return json({ error: "D1 not configured" }, 503);
+  const userId = url.searchParams.get("user_id");
+  if (!userId) return json({ error: "user_id required" }, 400);
+  const limit = clampInt(url.searchParams.get("limit"), 20, 1, 100);
+
+  const cacheKey = `v1:history:${userId}:${limit}`;
+  if (env.ZENITH_CACHE) {
+    const hit = await env.ZENITH_CACHE.get(cacheKey, { type: "json" });
+    if (hit) return json(hit, 200, { "X-Zenith-Cache": "HIT" });
+  }
+
+  let payload;
+  try {
+    payload = await getHistory(env.DB, userId, limit);
+  } catch (err) {
+    return json({ error: "db read failed", detail: String(err) }, 500);
+  }
+
+  if (env.ZENITH_CACHE) {
+    ctx.waitUntil(
+      env.ZENITH_CACHE.put(cacheKey, JSON.stringify(payload), {
+        expirationTtl: HISTORY_TTL_SECONDS,
+      }),
+    );
+  }
+  return json(payload, 200, { "X-Zenith-Cache": "MISS" });
 }
 
 async function handleExplain(request, url, env) {

@@ -58,3 +58,30 @@ CREATE INDEX IF NOT EXISTS idx_target_feedback_user
 -- target and reads the latest rating per (user, target).
 CREATE INDEX IF NOT EXISTS idx_target_feedback_target
     ON target_feedback(target_name, user_id, timestamp DESC);
+
+-- Lightweight per-plan summary, written at the edge after each successful
+-- /api/plan-ai response and read back by the History view. Distinct from the
+-- legacy session_history table (which stores full JSON blobs and carries a
+-- FOREIGN KEY to user_profiles): this one has no FK and only nullable summary
+-- columns, so an anonymous client UUID with no profile row can still record
+-- history. Safe additive migration — pure CREATE, no change to existing tables.
+CREATE TABLE IF NOT EXISTS session_summaries (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           TEXT NOT NULL,
+    timestamp         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    location_name     TEXT,
+    lat               REAL,
+    lon               REAL,
+    aperture_mm       REAL,
+    target_count      INTEGER,
+    moon_illumination REAL,
+    bortle            INTEGER,
+    seeing_median     REAL,
+    top_target        TEXT,
+    top_target_type   TEXT,
+    session_summary   TEXT,
+    mode              TEXT NOT NULL DEFAULT 'observer'
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_summaries_user_ts
+    ON session_summaries(user_id, timestamp DESC);

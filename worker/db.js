@@ -157,6 +157,74 @@ export async function communityFavorites(db, { limit = 20, minVotes = 1 } = {}) 
   return { favorites, total_targets_rated: favorites.length };
 }
 
+/**
+ * Persist a lightweight summary of a generated plan for the History view.
+ * Best-effort: callers schedule this with ctx.waitUntil so a write failure
+ * never affects the plan response. Stored in session_summaries (no FK), so an
+ * anonymous client UUID without a user_profiles row can still record history.
+ */
+export async function saveSession(db, summary) {
+  const {
+    user_id,
+    timestamp = new Date().toISOString(),
+    location_name = null,
+    lat = null,
+    lon = null,
+    aperture_mm = null,
+    target_count = null,
+    moon_illumination = null,
+    bortle = null,
+    seeing_median = null,
+    top_target = null,
+    top_target_type = null,
+    session_summary = null,
+    mode = "observer",
+  } = summary || {};
+  if (!user_id) return;
+  await db
+    .prepare(
+      `INSERT INTO session_summaries
+         (user_id, timestamp, location_name, lat, lon, aperture_mm,
+          target_count, moon_illumination, bortle, seeing_median,
+          top_target, top_target_type, session_summary, mode)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    )
+    .bind(
+      user_id, timestamp, location_name, lat, lon, aperture_mm,
+      target_count, moon_illumination, bortle, seeing_median,
+      top_target, top_target_type, session_summary, mode,
+    )
+    .run();
+}
+
+/**
+ * Most recent session summaries for a user, newest first.
+ */
+export async function getHistory(db, userId, limit = 20) {
+  const { results } = await db
+    .prepare(
+      `SELECT id, timestamp, location_name, lat, lon, aperture_mm,
+              target_count, moon_illumination, bortle, seeing_median,
+              top_target, top_target_type, session_summary, mode
+         FROM session_summaries
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?`,
+    )
+    .bind(userId, limit)
+    .all();
+  return { sessions: results || [] };
+}
+
+/** Median of a numeric array, or null when empty. */
+export function median(values) {
+  const nums = (values || []).filter((v) => typeof v === "number" && !Number.isNaN(v));
+  if (nums.length === 0) return null;
+  nums.sort((a, b) => a - b);
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+}
+
 function hydrate(row) {
   return {
     ...row,

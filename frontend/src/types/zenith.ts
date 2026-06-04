@@ -19,6 +19,9 @@ export interface PlanRequest {
   aperture_mm: number;
   date?: string | null;
   user_id?: string | null;
+  // Human label for the observing site. The backend ignores it, but the Worker
+  // reads it from the request body to record History summaries.
+  location_name?: string | null;
   mode: Mode;
   bortle_class?: number | null;
   catalog_filter?: CatalogFilter | null;
@@ -193,6 +196,29 @@ export interface CommunityFavorite {
 export interface CommunityFavoritesResponse {
   favorites: CommunityFavorite[];
   total_targets_rated: number;
+}
+
+// --- Session history (GET /api/history) -----------------------------------
+
+export interface HistorySession {
+  id: number;
+  timestamp: string;
+  location_name: string | null;
+  lat: number | null;
+  lon: number | null;
+  aperture_mm: number | null;
+  target_count: number | null;
+  moon_illumination: number | null;
+  bortle: number | null;
+  seeing_median: number | null;
+  top_target: string | null;
+  top_target_type: string | null;
+  session_summary: string | null;
+  mode: Mode;
+}
+
+export interface HistoryResponse {
+  sessions: HistorySession[];
 }
 
 export interface ExplainRequest {
