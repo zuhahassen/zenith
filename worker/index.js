@@ -182,6 +182,12 @@ export default {
       return handleExplain(request, url, env);
     }
 
+    // Multi-night calendar — KV-cached for 6h since a fixed target's calendar
+    // barely changes within that window.
+    if (url.pathname === "/api/calendar" && request.method === "POST") {
+      return handleCalendar(request, url, env, ctx);
+    }
+
     const ttl = CACHE_TTL[url.pathname] ?? 0;
     const cacheable = request.method === "GET" && ttl > 0;
     const cacheKey = cacheable ? await buildCacheKey(request, url) : null;
@@ -532,6 +538,61 @@ async function handleExplain(request, url, env) {
   } catch (err) {
     return json({ error: "backend unreachable", detail: String(err) }, 502);
   }
+}
+
+// 6-hour KV cache for a target's multi-night calendar. The cache key mirrors
+// the X-Calendar-Cache-Key the backend emits: a fixed target+site+range rarely
+// changes within 6h, so this turns a multi-second compute into a KV read.
+const CALENDAR_TTL_SECONDS = 6 * 60 * 60;
+
+async function handleCalendar(request, url, env, ctx) {
+  const body = await safeJson(request);
+  const cacheKey = calendarCacheKey(body);
+
+  if (cacheKey && env.ZENITH_CACHE) {
+    const hit = await env.ZENITH_CACHE.get(cacheKey, { type: "json" });
+    if (hit) return json(hit, 200, { "X-Zenith-Cache": "HIT" });
+  }
+
+  const backend = (env.BACKEND_URL || "").replace(/\/$/, "");
+  if (!backend) return json({ error: "BACKEND_URL not configured" }, 500);
+
+  const upstream = new Request(backend + url.pathname + url.search, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  try {
+    const resp = await fetch(upstream);
+    if (
+      cacheKey &&
+      env.ZENITH_CACHE &&
+      resp.ok &&
+      (resp.headers.get("content-type") || "").includes("application/json")
+    ) {
+      // Prefer the backend's emitted key hint when present.
+      const hintedKey = resp.headers.get("X-Calendar-Cache-Key") || cacheKey;
+      const payload = await resp.clone().json();
+      ctx.waitUntil(
+        env.ZENITH_CACHE.put(hintedKey, JSON.stringify(payload), {
+          expirationTtl: CALENDAR_TTL_SECONDS,
+        }),
+      );
+    }
+    return withCors(resp, { "X-Zenith-Cache": "MISS" });
+  } catch (err) {
+    return json({ error: "backend unreachable", detail: String(err) }, 502);
+  }
+}
+
+// Mirror of the backend's X-Calendar-Cache-Key so a cache lookup can happen
+// before proxying. Returns null when the body is missing required fields.
+function calendarCacheKey(body) {
+  if (!body || !body.target_name || body.lat == null || body.lon == null) return null;
+  if (!body.start_date || !body.end_date) return null;
+  const lat = Number(body.lat).toFixed(2);
+  const lon = Number(body.lon).toFixed(2);
+  return `calendar:${body.target_name}:${lat}:${lon}:${body.start_date}:${body.end_date}`;
 }
 
 async function buildCacheKey(request, url) {

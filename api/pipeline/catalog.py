@@ -228,6 +228,104 @@ def fetch_targets(
     return results
 
 
+def resolve_target(name: str) -> Optional[dict]:
+    """Resolve a single object by name to a standardized target dict.
+
+    Returns a dict with keys ``name``, ``common_name``, ``type``, ``ra``,
+    ``dec``, ``magnitude``, ``angular_size`` (``[major, minor]`` arcmin), or
+    ``None`` when the name can't be resolved.
+
+    Resolution order:
+      1. The offline ``SEED_CATALOG`` (covers the common Messier/NGC objects
+         and works without network — also what the smoke test exercises).
+      2. Astropy's SESAME name resolver for RA/Dec (handles "M 42", "M42",
+         "NGC 891", "Orion Nebula", …), enriched with object type + V mag via
+         a small SIMBAD TAP cone search around the resolved coordinates.
+    """
+    if not name or not name.strip():
+        return None
+    query = name.strip()
+
+    seed = _seed_lookup(query)
+    if seed is not None:
+        return seed
+
+    try:
+        from astropy.coordinates import SkyCoord
+
+        coord = SkyCoord.from_name(query)
+        ra = float(coord.ra.deg)
+        dec = float(coord.dec.deg)
+    except Exception as exc:  # name not found, network/SESAME outage
+        logger.info("resolve_target: SESAME could not resolve %r (%s)", query, exc)
+        return None
+
+    enriched = _enrich_from_simbad(ra, dec)
+    return {
+        "name": query,
+        "common_name": COMMON_NAMES.get(query.replace(" ", "").upper()),
+        "type": enriched.get("type", "Unknown"),
+        "ra": ra,
+        "dec": dec,
+        "magnitude": enriched.get("magnitude"),
+        "angular_size": enriched.get("angular_size", [None, None]),
+    }
+
+
+def _seed_lookup(query: str) -> Optional[dict]:
+    """Match a name against the offline seed catalog (designation or common)."""
+    key = query.replace(" ", "").upper()
+    for t in SEED_CATALOG:
+        name_key = t.name.replace(" ", "").upper()
+        common_key = (t.common_name or "").replace(" ", "").upper()
+        if key == name_key or (common_key and key == common_key):
+            return {
+                "name": t.name,
+                "common_name": t.common_name,
+                "type": t.kind,
+                "ra": t.ra_deg,
+                "dec": t.dec_deg,
+                "magnitude": t.magnitude,
+                "angular_size": list(t.size_arcmin) if t.size_arcmin else [None, None],
+            }
+    return None
+
+
+def _enrich_from_simbad(ra: float, dec: float, radius_deg: float = 0.05) -> dict:
+    """Best-effort SIMBAD cone search for object type, V magnitude and size.
+
+    Returns the nearest catalogued object's attributes within ``radius_deg``,
+    or an empty dict on any failure (the caller falls back to coordinates-only).
+    """
+    try:
+        from astroquery.simbad import Simbad
+
+        adql = (
+            "SELECT TOP 1 main_id, otype, allfluxes.V AS vmag, "
+            "galdim_majaxis, galdim_minaxis, "
+            f"DISTANCE(POINT('ICRS', ra, dec), POINT('ICRS', {ra}, {dec})) AS d "
+            "FROM basic LEFT JOIN allfluxes ON basic.oid = allfluxes.oidref "
+            f"WHERE CONTAINS(POINT('ICRS', ra, dec), "
+            f"CIRCLE('ICRS', {ra}, {dec}, {radius_deg})) = 1 "
+            "ORDER BY d ASC"
+        )
+        table = Simbad.query_tap(adql)
+        if table is None or len(table) == 0:
+            return {}
+        row = table[0]
+        return {
+            "type": _normalize_otype(_str(row["otype"])),
+            "magnitude": float(row["vmag"]) if _present(row["vmag"]) else None,
+            "angular_size": [
+                float(row["galdim_majaxis"]) if _present(row["galdim_majaxis"]) else None,
+                float(row["galdim_minaxis"]) if _present(row["galdim_minaxis"]) else None,
+            ],
+        }
+    except Exception as exc:
+        logger.info("_enrich_from_simbad failed at (%.4f, %.4f): %s", ra, dec, exc)
+        return {}
+
+
 def to_targets(rows: list[dict]) -> list[Target]:
     """Convert the dict shape returned by :func:`fetch_targets` into the
     :class:`Target` dataclass consumed by the visibility pipeline."""

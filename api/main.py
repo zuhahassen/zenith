@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
 from typing import Literal, Optional
@@ -32,7 +32,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,7 +42,15 @@ from .agent.explainer import Explainer
 from .agent.planner import SessionPlanner
 from .integrations.mast import MASTClient
 from .integrations.weather import fetch_nightly_forecast, fetch_weather
-from .pipeline.catalog import NAMED_CATALOGS, SEED_CATALOG, fetch_targets, filter_to_catalog, to_targets
+from .pipeline.calendar import build_calendar
+from .pipeline.catalog import (
+    NAMED_CATALOGS,
+    SEED_CATALOG,
+    fetch_targets,
+    filter_to_catalog,
+    resolve_target,
+    to_targets,
+)
 from .pipeline.light_pollution import estimate_bortle
 from .pipeline.seeing import NUM_SLOTS, SLOT_MINUTES, SeeingPredictor
 from .pipeline.visibility import (
@@ -142,6 +150,41 @@ class CompareSitesRequest(BaseModel):
     catalog_filter: Optional[str] = Field(default=None)
     duration_hours: float = 4.0
     min_alt_deg: float = 25.0
+
+
+class CalendarRequest(BaseModel):
+    """Multi-night observability calendar for a single target."""
+
+    lat: float
+    lon: float
+    target_name: str = Field(..., description="SIMBAD name or common name, e.g. 'M 42'")
+    start_date: date_cls
+    end_date: date_cls
+    aperture_mm: float = Field(150.0, gt=0)
+    min_alt_deg: float = Field(20.0, ge=0, le=90)
+
+
+class CalendarNight(BaseModel):
+    date: str
+    observable: bool
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    window_hours: Optional[float] = None
+    peak_alt_deg: Optional[float] = None
+    peak_time: Optional[str] = None
+    moon_illumination: float
+    moon_separation_deg: Optional[float] = None
+    predicted_seeing: Optional[float] = None
+    quality_score: Optional[float] = None
+    dark_window_hours: float
+
+
+# Hard cap on the calendar span (inclusive) to bound compute + cache size.
+_CALENDAR_MAX_NIGHTS = 90
+# Open-Meteo's free forecast only reaches ~16 days; seeing is only meaningful
+# for the next week, so we forecast-condition seeing for nights within this
+# horizon and leave it null beyond.
+_CALENDAR_SEEING_HORIZON_DAYS = 7
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +538,176 @@ def _heuristic_recommendation(scored_sites: list[dict]) -> str:
         f"{best['label']} is the best pick tonight (score "
         f"{best['composite_score']}/100) thanks to {reason_str}."
     )
+
+
+# ---------------------------------------------------------------------------
+# Multi-night target calendar
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/calendar")
+async def get_target_calendar(body: CalendarRequest, response: Response) -> dict:
+    """Per-night observability for one target across a date range (≤ 90 days).
+
+    Resolves the target to RA/Dec via SIMBAD/SESAME, then computes visibility,
+    moon geometry, an optional near-term seeing forecast and a 0-1 quality
+    score for every night. Sets ``X-Calendar-Cache-Key`` so the edge Worker can
+    KV-cache the response for 6 hours.
+    """
+    if body.end_date < body.start_date:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+    span_nights = (body.end_date - body.start_date).days + 1
+    if span_nights > _CALENDAR_MAX_NIGHTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Date range too large: {span_nights} nights (max {_CALENDAR_MAX_NIGHTS}).",
+        )
+
+    target = resolve_target(body.target_name)
+    if target is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "Target not found",
+                "suggestion": "Try the SIMBAD name e.g. 'M 42' or 'NGC 891'",
+            },
+        )
+
+    # Near-term seeing conditioning (best-effort; never fatal to the calendar).
+    try:
+        seeing_by_date = await _calendar_seeing_by_date(
+            body.lat, body.lon, body.start_date, body.end_date,
+        )
+    except Exception:
+        logger.exception("calendar seeing conditioning failed; continuing without it")
+        seeing_by_date = {}
+
+    nights = await build_calendar(
+        lat=body.lat,
+        lon=body.lon,
+        ra_deg=float(target["ra"]),
+        dec_deg=float(target["dec"]),
+        start_date=body.start_date,
+        end_date=body.end_date,
+        min_alt_deg=body.min_alt_deg,
+        seeing_by_date=seeing_by_date,
+    )
+
+    response.headers["X-Calendar-Cache-Key"] = (
+        f"calendar:{body.target_name}:{body.lat:.2f}:{body.lon:.2f}:"
+        f"{body.start_date.isoformat()}:{body.end_date.isoformat()}"
+    )
+
+    size = target.get("angular_size") or [None, None]
+    return {
+        "target": {
+            "name": target.get("name") or body.target_name,
+            "common_name": target.get("common_name"),
+            "ra": round(float(target["ra"]), 5),
+            "dec": round(float(target["dec"]), 5),
+            "type": target.get("type") or "Unknown",
+            "magnitude": target.get("magnitude"),
+            "angular_size": size,
+        },
+        "nights": nights,
+    }
+
+
+async def _calendar_seeing_by_date(
+    lat: float, lon: float, start: date_cls, end: date_cls,
+) -> dict[str, float]:
+    """Predict a per-night median seeing for nights within the forecast horizon.
+
+    Fetches one wide Open-Meteo window, then anchors the seeing model at each
+    near-term night's deep-night hour and records the median of its slots.
+    Nights beyond ``_CALENDAR_SEEING_HORIZON_DAYS`` are omitted (null seeing).
+    """
+    today = datetime.now(tz=timezone.utc).date()
+    near_term = [
+        start + timedelta(days=i)
+        for i in range((end - start).days + 1)
+        if 0 <= (start + timedelta(days=i) - today).days < _CALENDAR_SEEING_HORIZON_DAYS
+    ]
+    if not near_term:
+        return {}
+
+    history = await _weather_forecast_history(lat, lon, forecast_days=8)
+    if not history:
+        return {}
+
+    out: dict[str, float] = {}
+    for d in near_term:
+        # Anchor at the night's deep-night hours (~4h before local midnight).
+        local_midnight = datetime(d.year, d.month, d.day, 12, tzinfo=timezone.utc) + timedelta(
+            hours=12 - lon / 15.0
+        )
+        anchor = local_midnight - timedelta(hours=4)
+        slots = _seeing.predict(history, session_start=anchor)
+        vals = [
+            s["predicted_seeing_arcsec"]
+            for s in slots
+            if s.get("predicted_seeing_arcsec") is not None
+        ]
+        if vals:
+            out[d.isoformat()] = float(median(vals))
+    return out
+
+
+async def _weather_forecast_history(
+    lat: float, lon: float, forecast_days: int = 8,
+) -> list[dict]:
+    """Open-Meteo hourly history+forecast as seeing-feature rows (no narrow
+    window filter), spanning the past day through ``forecast_days`` ahead."""
+    import httpx
+
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": _HOURLY_VARS + "," + _PRESSURE_LEVEL_VARS,
+        "past_days": 1,
+        "forecast_days": forecast_days,
+        "timeformat": "unixtime",
+        "windspeed_unit": "ms",
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(_OPEN_METEO_HOURLY_URL, params=params)
+        resp.raise_for_status()
+        payload = resp.json()
+
+    hourly = payload.get("hourly") or {}
+    times: list[int] = hourly.get("time") or []
+    if not times:
+        return []
+
+    rows: list[dict] = []
+    for i, ts in enumerate(times):
+        speed = _safe_get(hourly, "windspeed_10m", i)
+        direction = _safe_get(hourly, "winddirection_10m", i)
+        u, v = _wind_components(speed, direction)
+        row = {
+            "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
+            "temperature_2m": _safe_get(hourly, "temperature_2m", i),
+            "relative_humidity_2m": _safe_get(hourly, "relativehumidity_2m", i),
+            "dewpoint_2m": _safe_get(hourly, "dewpoint_2m", i),
+            "pressure_msl": _safe_get(hourly, "pressure_msl", i),
+            "wind_speed_10m": speed,
+            "wind_direction_10m": direction,
+            "wind_u_10m": u,
+            "wind_v_10m": v,
+            "cloud_cover": _safe_get(hourly, "cloudcover", i),
+            "site_lat": lat,
+            "site_lon": lon,
+        }
+        for lvl in _PRESSURE_LEVELS:
+            lvl_u, lvl_v = _wind_components(
+                _safe_get(hourly, f"windspeed_{lvl}hPa", i),
+                _safe_get(hourly, f"winddirection_{lvl}hPa", i),
+            )
+            row[f"wind_u_{lvl}"] = lvl_u
+            row[f"wind_v_{lvl}"] = lvl_v
+            row[f"temp_{lvl}"] = _safe_get(hourly, f"temperature_{lvl}hPa", i)
+        rows.append(row)
+    return rows
 
 
 # ---------------------------------------------------------------------------
