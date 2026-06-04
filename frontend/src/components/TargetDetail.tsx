@@ -6,6 +6,7 @@ import {
   formatDec,
   formatRA,
   hhmm,
+  popularName,
   seeingHex,
   tzLabel,
   typeInfo,
@@ -61,7 +62,7 @@ export function TargetDetail({
             <span className="tdetail__badge" style={{ color: info.color }}>{info.code}</span>
           </div>
           <div className="tdetail__sub">
-            {target.common_name ? `${target.common_name} · ` : ""}
+            {(target.common_name || popularName(target.name)) ? `${target.common_name || popularName(target.name)} · ` : ""}
             {info.label}
           </div>
         </div>
