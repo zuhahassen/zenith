@@ -3,9 +3,8 @@
    Visual language: deep navy, precise typography (Space Grotesk + Space Mono),
    white accent used sparingly. ESO / NASA mission-control, not SaaS.
    1px navy borders not shadows, data tables not cards, monospace data.
+   Fonts (Space Grotesk + Space Mono) are bundled via @fontsource in main.tsx.
    ========================================================================== */
-
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
 :root {
   /* Navy backgrounds — deep, rich, not flat black */

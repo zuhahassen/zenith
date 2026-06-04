@@ -10,6 +10,8 @@
     "deploy": "wrangler pages deploy dist"
   },
   "dependencies": {
+    "@fontsource/space-grotesk": "^5.2.10",
+    "@fontsource/space-mono": "^5.2.9",
     "@tanstack/react-query": "^5.51.0",
     "axios": "^1.7.0",
     "date-fns": "^3.6.0",
