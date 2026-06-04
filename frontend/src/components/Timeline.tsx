@@ -14,15 +14,18 @@ import { Telescope } from "lucide-react";
 import { typeInfo } from "../lib/format";
 import type { ScoredTarget } from "../types/zenith";
 
+// Literal hexes mirror the index.css design tokens (recharts can't read CSS vars).
 const C = {
-  accent: "#5b8db8",
-  grid: "#1e2028",
-  border: "#2a2d35",
-  textDim: "#7a7870",
-  textData: "#9db8d2",
-  text: "#d4cfc8",
-  panel: "#16191f",
+  accent: "#ffffff", // --accent (white)
+  grid: "#152040", // --border-dim
+  border: "#1e2f50", // --border
+  textDim: "#8a9bc4", // --text-dim
+  textData: "#c8d8f0", // --text-data
+  textFaint: "#3d5080", // --text-faint
+  text: "#f0f4ff", // --text
+  panel: "#1e3460", // --bg-elevated (tooltip surface)
 };
+const MONO = "'Space Mono', ui-monospace, monospace";
 
 const MAX_ROWS = 20;
 
@@ -110,20 +113,20 @@ export function Timeline({ targets, selectedName, onSelect }: Props) {
               ticks={ticks}
               tickFormatter={(v) => format(v as number, "HH:mm")}
               stroke={C.border}
-              tick={{ fill: C.textDim, fontSize: 10, fontFamily: "ui-monospace" }}
+              tick={{ fill: C.textFaint, fontSize: 10, fontFamily: MONO }}
             />
             <YAxis
               type="category"
               dataKey="rank"
               stroke={C.border}
-              tick={{ fill: C.textData, fontSize: 10, fontFamily: "ui-monospace" }}
+              tick={{ fill: C.textFaint, fontSize: 10, fontFamily: MONO }}
               width={22}
               interval={0}
             />
-            <Tooltip cursor={{ fill: "rgba(91,141,184,0.06)" }} content={<TLTooltip />} />
+            <Tooltip cursor={{ fill: "rgba(255,255,255,0.05)" }} content={<TLTooltip />} />
             <Bar
               dataKey="range"
-              barSize={8}
+              barSize={4}
               isAnimationActive={false}
               onClick={(d: unknown) => {
                 const ref = (d as { payload?: Row }).payload?.ref;
@@ -152,7 +155,7 @@ function NowLabel(props: unknown) {
         textAnchor="middle"
         fill={C.accent}
         fontSize={9}
-        fontFamily="ui-monospace"
+        fontFamily={MONO}
         letterSpacing="0.1em"
       >
         NOW
@@ -174,10 +177,16 @@ function TLBar({ x, y, width, height, payload, selectedName }: TLBarProps) {
   if (width <= 0 || !payload) return null;
   const selected = selectedName != null && payload.ref.name === selectedName;
   const fill = typeInfo(payload.ref.kind).color;
+  const cy = y + height / 2;
   return (
     <g style={{ cursor: "pointer" }}>
-      <rect x={x} y={y} width={width} height={height} fill={fill} opacity={selected ? 1 : 0.7} rx={1} />
-      {selected && <rect x={x} y={y - 2} width={width} height={height + 4} fill="none" stroke={C.accent} strokeWidth={1} rx={1} />}
+      <rect x={x} y={y} width={width} height={height} fill={fill} opacity={selected ? 1 : 0.8} rx={1} />
+      {selected && (
+        <polygon
+          points={`${x},${cy - 4} ${x + 4},${cy} ${x},${cy + 4} ${x - 4},${cy}`}
+          fill={C.accent}
+        />
+      )}
     </g>
   );
 }
@@ -193,7 +202,7 @@ function TLTooltip({ active, payload }: { active?: boolean; payload?: { payload:
         borderRadius: 2,
         padding: "8px 11px",
         fontSize: 11,
-        fontFamily: "ui-monospace",
+        fontFamily: MONO,
         color: C.text,
         lineHeight: 1.6,
       }}
