@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { CalendarDays, Clock, MapPin, SlidersHorizontal, Telescope } from "lucide-react";
 import { useCommunityFavorites } from "../hooks/useCommunityFavorites";
+import { hhmm } from "../lib/format";
 import type { PlanResponse } from "../types/zenith";
 
 // Normalize a target designation for matching across sources ("M 13" -> "M13").
@@ -118,9 +119,5 @@ function bortleWord(b: number): string {
 function darkWindowLabel(plan?: PlanResponse): string {
   const slots = plan?.seeing_forecast ?? [];
   if (slots.length < 2) return "—";
-  const start = new Date(slots[0].slot);
-  const end = new Date(slots[slots.length - 1].slot);
-  const f = (d: Date) =>
-    `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-  return `${f(start)}–${f(end)}`;
+  return `${hhmm(slots[0].slot)}–${hhmm(slots[slots.length - 1].slot)}`;
 }

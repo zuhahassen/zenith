@@ -9,6 +9,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { TonightView } from "./components/TonightView";
 import { TargetDetail } from "./components/TargetDetail";
 import { usePlan } from "./hooks/usePlan";
+import { setTimeZoneMode } from "./lib/format";
 import { getGuestId, getUserEmail, isSignedIn, setJWT } from "./lib/auth";
 import { getUserId, submitFeedback } from "./lib/feedback";
 import { loadSettings, resetSettings, saveSettings, type ZenithSettings } from "./lib/settings";
@@ -24,6 +25,9 @@ const SettingsView = lazy(() =>
 );
 const HistoryView = lazy(() =>
   import("./components/HistoryView").then((m) => ({ default: m.HistoryView })),
+);
+const HistorySessionDetail = lazy(() =>
+  import("./components/HistorySessionDetail").then((m) => ({ default: m.HistorySessionDetail })),
 );
 const CalendarView = lazy(() =>
   import("./components/CalendarView").then((m) => ({ default: m.CalendarView })),
@@ -44,6 +48,7 @@ export default function App() {
   const [settings, setSettings] = useState<ZenithSettings>(() => loadSettings());
   const [view, setView] = useState<View>("tonight");
   const [selectedTarget, setSelectedTarget] = useState<ScoredTarget | null>(null);
+  const [selectedSession, setSelectedSession] = useState<HistorySession | null>(null);
   const [ratings, setRatings] = useState<Record<string, number>>({});
   // Calendar deep-link (set from a target detail) + the target to auto-select
   // once a "Plan this night" plan finishes loading.
@@ -58,6 +63,11 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<string | null>(null);
 
   const data: PlanResponse | undefined = plan.data;
+
+  // Apply the display-timezone preference for all time formatters. Set during
+  // render so children format with the current choice on the same pass; it's a
+  // cheap idempotent module-level assignment.
+  setTimeZoneMode(settings.timezone);
 
   // Handle the magic-link landing at /auth/verify?token=… exactly once on
   // mount: exchange the token for a JWT, merge guest data, then clean the URL.
@@ -196,7 +206,12 @@ export default function App() {
     setPendingSelect(null);
   }, [data, pendingSelect]);
 
-  const showRightPanel = Boolean(data);
+  // The right panel hosts the target detail on Tonight, and the session detail
+  // on History. It stays hidden on Compare/Calendar/Settings so the old
+  // "Select a target…" placeholder no longer lingers on those tabs.
+  const showRightPanel =
+    (view === "tonight" && Boolean(data)) ||
+    (view === "history" && Boolean(selectedSession));
   const locLabel = settings.locationLabel || (data ? `${data.request.lat.toFixed(2)}, ${data.request.lon.toFixed(2)}` : "");
   const viewName = VIEW_LABELS[view];
   const centerLabel = [locLabel, viewName].filter(Boolean).join(" · ");
@@ -220,7 +235,14 @@ export default function App() {
       </header>
 
       <div className={`layout ${showRightPanel ? "" : "layout--setup"}`}>
-        <Sidebar view={view} onNavigate={setView} plan={data} />
+        <Sidebar
+          view={view}
+          onNavigate={(v) => {
+            setView(v);
+            if (v !== "history") setSelectedSession(null);
+          }}
+          plan={data}
+        />
 
         <div className="main">
           <MainContent
@@ -232,7 +254,8 @@ export default function App() {
             selectedName={selectedTarget?.name ?? null}
             onSelect={setSelectedTarget}
             onSubmit={submit}
-            onPlanAgain={planAgain}
+            selectedSessionId={selectedSession?.id ?? null}
+            onSelectSession={setSelectedSession}
             onSaveSettings={persistSettings}
             onResetSettings={() => persistSettings(resetSettings())}
             calendarLink={calendarLink}
@@ -242,7 +265,15 @@ export default function App() {
 
         {showRightPanel && (
           <aside className="detail">
-            {selectedTarget && data ? (
+            {view === "history" && selectedSession ? (
+              <Suspense fallback={null}>
+                <HistorySessionDetail
+                  session={selectedSession}
+                  onPlanAgain={planAgain}
+                  onClose={() => setSelectedSession(null)}
+                />
+              </Suspense>
+            ) : selectedTarget && data ? (
               <>
                 <TargetDetail
                   target={selectedTarget}
@@ -281,7 +312,8 @@ interface MainContentProps {
   selectedName: string | null;
   onSelect: (t: ScoredTarget) => void;
   onSubmit: (req: PlanRequest, label: string) => void;
-  onPlanAgain: (session: HistorySession) => void;
+  selectedSessionId: number | null;
+  onSelectSession: (session: HistorySession) => void;
   onSaveSettings: (s: ZenithSettings) => void;
   onResetSettings: () => void;
   calendarLink: CalendarDeepLink | null;
@@ -297,7 +329,8 @@ function MainContent({
   selectedName,
   onSelect,
   onSubmit,
-  onPlanAgain,
+  selectedSessionId,
+  onSelectSession,
   onSaveSettings,
   onResetSettings,
   calendarLink,
@@ -330,7 +363,7 @@ function MainContent({
       <>
         <div className="panel-title">History</div>
         <Suspense fallback={<div className="center-load">Loading…</div>}>
-          <HistoryView onPlanAgain={onPlanAgain} />
+          <HistoryView selectedId={selectedSessionId} onSelect={onSelectSession} />
         </Suspense>
       </>
     );

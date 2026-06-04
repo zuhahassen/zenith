@@ -176,12 +176,12 @@ interface TLBarProps {
 function TLBar({ x, y, width, height, payload, selectedName }: TLBarProps) {
   if (width <= 0 || !payload) return null;
   const selected = selectedName != null && payload.ref.name === selectedName;
-  // White-accent bars (the table carries the per-type color coding).
-  const fill = selected ? "#ffffff" : "rgba(255,255,255,0.85)";
+  // Per-type color coding so the timeline matches the target list at a glance.
+  const fill = typeInfo(payload.ref.kind).color;
   const cy = y + height / 2;
   return (
     <g style={{ cursor: "pointer" }}>
-      <rect x={x} y={y} width={width} height={height} fill={fill} opacity={selected ? 1 : 0.85} rx={1} />
+      <rect x={x} y={y} width={width} height={height} fill={fill} opacity={selected ? 1 : 0.7} rx={1} />
       {selected && (
         <polygon
           points={`${x},${cy - 4} ${x + 4},${cy} ${x},${cy + 4} ${x - 4},${cy}`}

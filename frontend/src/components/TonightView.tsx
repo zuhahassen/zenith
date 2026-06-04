@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect } from "react";
 import { SeeingStrip } from "./SeeingStrip";
 import { TargetTable } from "./TargetTable";
-import { durationLabel } from "../lib/format";
+import { durationLabel, hhmm, tzLabel } from "../lib/format";
 import type { PlanResponse, ScoredTarget } from "../types/zenith";
 
 const Timeline = lazy(() =>
@@ -37,7 +37,7 @@ export function TonightView({ data, selectedName, onSelect }: Props) {
   const slots = data.seeing_forecast;
   const dark =
     slots.length >= 2
-      ? `${hhmmUTC(slots[0].slot)} – ${hhmmUTC(slots[slots.length - 1].slot)} UTC`
+      ? `${hhmm(slots[0].slot)} – ${hhmm(slots[slots.length - 1].slot)} ${tzLabel()}`
       : "—";
   const darkDur =
     slots.length >= 2
@@ -108,7 +108,3 @@ export function TonightView({ data, selectedName, onSelect }: Props) {
   );
 }
 
-function hhmmUTC(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-}

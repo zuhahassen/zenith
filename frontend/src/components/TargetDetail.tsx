@@ -7,6 +7,7 @@ import {
   formatRA,
   hhmm,
   seeingHex,
+  tzLabel,
   typeInfo,
 } from "../lib/format";
 import type { AIPlan, Mode, ScoredTarget } from "../types/zenith";
@@ -147,7 +148,7 @@ export function TargetDetail({
         <div className="kvline">
           <span className="kvline__k">Window</span>
           <span className="kvline__v">
-            {hhmm(target.window_start)} → {hhmm(target.window_end)} UTC
+            {hhmm(target.window_start)} → {hhmm(target.window_end)} {tzLabel()}
           </span>
         </div>
         <div className="kvline">
@@ -157,7 +158,7 @@ export function TargetDetail({
         <div className="kvline">
           <span className="kvline__k">Peak</span>
           <span className="kvline__v">
-            {target.max_alt_deg.toFixed(1)}°{target.transit_time ? ` at ${hhmm(target.transit_time)} UTC` : ""}
+            {target.max_alt_deg.toFixed(1)}°{target.transit_time ? ` at ${hhmm(target.transit_time)} ${tzLabel()}` : ""}
           </span>
         </div>
         <div className="kvline">

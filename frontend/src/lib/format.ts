@@ -11,22 +11,22 @@ export interface TypeInfo {
   code: string; // Gx, EN, RN, PN, GlCl, OpCl, SNR, ... (compact, used in filters)
   short: string; // friendly compact label for table rows
   label: string; // full human label
-  color: string; // muted hex matching the new palette (no teal/cyan)
+  color: string; // palette hex used to accent the type in the list + timeline
 }
 
-// Object-type palette — muted, warm-neutral tones on navy. Deliberately free of
-// teal/cyan so the UI reads as the white + warm-white accent system.
+// Object-type palette — colorful accents that help scan the target list and
+// timeline at a glance (galaxies blue, nebulae teal, clusters pale, etc.).
 // Literal hexes (not var()) so they also work as SVG presentation attributes.
 const STEEL = "#3d5080"; // --color-other
 const TYPE_TABLE: Record<string, TypeInfo> = {
-  Galaxy: { code: "Gx", short: "Galaxy", label: "Galaxy", color: "#9fb0d0" },
-  Nebula: { code: "EN", short: "Nebula", label: "Emission nebula", color: "#d0c3b0" },
-  EmissionNebula: { code: "EN", short: "Nebula", label: "Emission nebula", color: "#d0c3b0" },
-  ReflectionNebula: { code: "RN", short: "Nebula", label: "Reflection nebula", color: "#c4c0b2" },
-  PlanetaryNebula: { code: "PN", short: "Plan. Neb.", label: "Planetary nebula", color: "#c9b6c4" },
+  Galaxy: { code: "Gx", short: "Galaxy", label: "Galaxy", color: "#6b9fd4" },
+  Nebula: { code: "EN", short: "Nebula", label: "Emission nebula", color: "#6bc4c4" },
+  EmissionNebula: { code: "EN", short: "Nebula", label: "Emission nebula", color: "#6bc4c4" },
+  ReflectionNebula: { code: "RN", short: "Nebula", label: "Reflection nebula", color: "#8aabad" },
+  PlanetaryNebula: { code: "PN", short: "Plan. Neb.", label: "Planetary nebula", color: "#6bc4c4" },
   GlCl: { code: "GlCl", short: "Globular", label: "Globular cluster", color: "#d4d4f0" },
-  OpenCl: { code: "OpCl", short: "Open Cluster", label: "Open cluster", color: "#aab2c0" },
-  SNR: { code: "SNR", short: "SN Remnant", label: "Supernova remnant", color: "#c2a3a3" },
+  OpenCl: { code: "OpCl", short: "Open Cluster", label: "Open cluster", color: "#8aabad" },
+  SNR: { code: "SNR", short: "SN Remnant", label: "Supernova remnant", color: "#b08a8a" },
   Unknown: { code: "—", short: "—", label: "Unknown", color: STEEL },
 };
 
@@ -68,16 +68,16 @@ export interface SeeingQuality {
 }
 
 export function seeingQuality(value: number): SeeingQuality {
-  // "GOOD" uses the white accent; lesser tiers stay muted neutral.
-  if (value < 1.5) return { color: "rgba(255,255,255,0.85)", label: "GOOD" };
-  if (value <= 2.5) return { color: "var(--text-dim)", label: "AVERAGE" };
+  // Color-coded so a good night reads green at a glance.
+  if (value < 1.5) return { color: "var(--good)", label: "GOOD" };
+  if (value <= 2.5) return { color: "var(--avg)", label: "AVERAGE" };
   return { color: "var(--poor)", label: "POOR" };
 }
 
 // Literal hex variants for SVG presentation attributes (var() doesn't resolve).
 export function seeingHex(value: number): string {
-  if (value < 1.5) return "#ffffff"; // GOOD — white accent
-  if (value <= 2.5) return "#8a9bc4"; // AVERAGE — --text-dim
+  if (value < 1.5) return "#4a9e6a"; // GOOD — --good (green)
+  if (value <= 2.5) return "#7a8e5a"; // AVERAGE — --avg
   return "#8e4a4a"; // POOR — --poor
 }
 
@@ -107,12 +107,36 @@ export function formatDec(deg: number): string {
   return `${sign}${pad(dd)}° ${pad(mm)}′ ${pad(ss)}″`;
 }
 
-// --- Time helpers (UTC HH:mm) ----------------------------------------------
+// --- Time helpers -----------------------------------------------------------
+// Display timezone is a user preference (Settings → Display preferences). We
+// keep a tiny module-level flag so every formatter stays consistent without
+// threading the setting through every component. App sets it on load and
+// whenever the preference changes, then re-renders the tree.
+
+let tzMode: "utc" | "local" = "utc";
+
+export function setTimeZoneMode(mode: "utc" | "local"): void {
+  tzMode = mode;
+}
+
+// Short label to append after times, e.g. "UTC" or the local abbreviation.
+export function tzLabel(): string {
+  if (tzMode === "utc") return "UTC";
+  try {
+    const parts = new Intl.DateTimeFormat(undefined, {
+      timeZoneName: "short",
+    }).formatToParts(new Date());
+    return parts.find((p) => p.type === "timeZoneName")?.value ?? "local";
+  } catch {
+    return "local";
+  }
+}
 
 export function hhmm(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
+  if (tzMode === "local") return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 

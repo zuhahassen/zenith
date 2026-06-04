@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCalendar } from "../hooks/useCalendar";
-import { hhmm, typeInfo } from "../lib/format";
+import { hhmm, tzLabel, typeInfo } from "../lib/format";
 import type { ZenithSettings } from "../lib/settings";
 import type { CalendarNight, CalendarResponse } from "../types/zenith";
 
@@ -287,11 +287,11 @@ function CellPopover({
       {night.observable && night.window_start && (
         <>
           <div className="cal-pop__line">
-            Window: {hhmm(night.window_start)} – {hhmm(night.window_end)} UTC
+            Window: {hhmm(night.window_start)} – {hhmm(night.window_end)} {tzLabel()}
             {night.window_hours != null ? ` (${hoursLabel(night.window_hours)})` : ""}
           </div>
           <div className="cal-pop__line">
-            Peak: {night.peak_alt_deg?.toFixed(0)}° at {hhmm(night.peak_time)} UTC
+            Peak: {night.peak_alt_deg?.toFixed(0)}° at {hhmm(night.peak_time)} {tzLabel()}
           </div>
         </>
       )}

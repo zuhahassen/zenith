@@ -1,17 +1,15 @@
-import { Fragment, useState } from "react";
-import { RotateCcw } from "lucide-react";
 import { useHistory } from "../hooks/useHistory";
 import { getUserId } from "../lib/feedback";
 import { seeingHex, typeInfo } from "../lib/format";
 import type { HistorySession } from "../types/zenith";
 
 interface Props {
-  onPlanAgain: (session: HistorySession) => void;
+  selectedId: number | null;
+  onSelect: (session: HistorySession) => void;
 }
 
-export function HistoryView({ onPlanAgain }: Props) {
+export function HistoryView({ selectedId, onSelect }: Props) {
   const history = useHistory(getUserId(), 20);
-  const [expanded, setExpanded] = useState<number | null>(null);
 
   if (history.isLoading) {
     return <div className="center-load">Loading history…</div>;
@@ -38,107 +36,55 @@ export function HistoryView({ onPlanAgain }: Props) {
       <table className="dtable">
         <thead>
           <tr>
-            <th className="caret-cell" />
             <th>Date</th>
             <th>Location</th>
             <th className="num">Targets</th>
             <th>Moon</th>
             <th className="num">Seeing</th>
             <th>Top target</th>
-            <th />
           </tr>
         </thead>
         <tbody>
           {sessions.map((s) => {
             const info = typeInfo(s.top_target_type);
-            const isOpen = expanded === s.id;
             const moonPct = s.moon_illumination != null ? Math.round(s.moon_illumination * 100) : null;
             return (
-              <Fragment key={s.id}>
-                <tr
-                  className={isOpen ? "selected" : ""}
-                  onClick={() => setExpanded(isOpen ? null : s.id)}
-                >
-                  <td className="caret-cell">{isOpen ? "▾" : "▸"}</td>
-                  <td className="mono" style={{ color: "var(--text-data)" }}>{fmtDate(s.timestamp)}</td>
-                  <td>{s.location_name || coords(s)}</td>
-                  <td className="num">{s.target_count ?? "—"}</td>
-                  <td>
-                    {moonPct != null ? (
-                      <span className="moon-cell">
-                        <span className="moon-bar">
-                          <span className="moon-bar__fill" style={{ width: `${moonPct}%` }} />
-                        </span>
-                        <span className="mono">{moonPct}%</span>
+              <tr
+                key={s.id}
+                className={selectedId === s.id ? "selected" : ""}
+                onClick={() => onSelect(s)}
+              >
+                <td className="mono" style={{ color: "var(--text-data)" }}>{fmtDate(s.timestamp)}</td>
+                <td>{s.location_name || coords(s)}</td>
+                <td className="num">{s.target_count ?? "—"}</td>
+                <td>
+                  {moonPct != null ? (
+                    <span className="moon-cell">
+                      <span className="moon-bar">
+                        <span className="moon-bar__fill" style={{ width: `${moonPct}%` }} />
                       </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="num" style={{ color: s.seeing_median != null ? seeingHex(s.seeing_median) : undefined }}>
-                    {s.seeing_median != null ? `${s.seeing_median.toFixed(1)}″` : "—"}
-                  </td>
-                  <td>
-                    {s.top_target ? (
-                      <>
-                        {s.top_target}
-                        {s.top_target_type && (
-                          <span style={{ color: info.color }}> ({info.code})</span>
-                        )}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="num">
-                    <button
-                      className="history-replan"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPlanAgain(s);
-                      }}
-                    >
-                      <RotateCcw size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
-                      Plan again
-                    </button>
-                  </td>
-                </tr>
-                {isOpen && (
-                  <tr className="history-detail">
-                    <td colSpan={8}>
-                      <div className="history-detail__mode">
-                        {s.mode === "astrophotographer" ? "Astrophotographer" : "Visual observer"}
-                        {s.aperture_mm ? ` · ${s.aperture_mm} mm` : ""}
-                        {s.bortle ? ` · Bortle ${s.bortle}` : ""}
-                      </div>
-                      {s.session_summary && (
-                        <div className="history-detail__summary">{s.session_summary}</div>
+                      <span className="mono">{moonPct}%</span>
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="num" style={{ color: s.seeing_median != null ? seeingHex(s.seeing_median) : undefined }}>
+                  {s.seeing_median != null ? `${s.seeing_median.toFixed(1)}″` : "—"}
+                </td>
+                <td>
+                  {s.top_target ? (
+                    <>
+                      {s.top_target}
+                      {s.top_target_type && (
+                        <span style={{ color: info.color }}> ({info.code})</span>
                       )}
-                      <div className="history-detail__actions">
-                        <button
-                          className="history-replan"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onPlanAgain(s);
-                          }}
-                        >
-                          <RotateCcw size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
-                          Plan this session again
-                        </button>
-                        <button
-                          className="history-collapse"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpanded(null);
-                          }}
-                        >
-                          ▴ Collapse
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
             );
           })}
         </tbody>

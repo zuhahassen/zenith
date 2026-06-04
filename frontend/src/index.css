@@ -1,9 +1,9 @@
 /* ==========================================================================
    ZENITH — mission-control astronomy planning UI
-   Visual language: deep navy, precise typography (Space Grotesk + Space Mono),
-   white accent used sparingly. ESO / NASA mission-control, not SaaS.
+   Visual language: deep navy, editorial typography (Newsreader serif headings,
+   Inter body, Space Mono data). ESO / NASA mission-control, not SaaS.
    1px navy borders not shadows, data tables not cards, monospace data.
-   Fonts (Space Grotesk + Space Mono) are bundled via @fontsource in main.tsx.
+   Fonts (Inter + Newsreader + Space Mono) are bundled via @fontsource in main.tsx.
    ========================================================================== */
 
 :root {
@@ -44,9 +44,10 @@
   --border-dim:  #152040;   /* inner separators */
   --rule:        #182848;   /* horizontal rules */
 
-  /* Typography */
-  --font-ui:   'Space Grotesk', 'Inter', system-ui, sans-serif;
-  --font-mono: 'Space Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  /* Typography — editorial serif headings over a clean humanist sans body */
+  --font-ui:      'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-mono:    'Space Mono', 'JetBrains Mono', 'Fira Code', monospace;
 
   --radius: 2px;
 
@@ -356,12 +357,12 @@ hr {
 }
 
 .panel-title {
-  font-variant: small-caps;
-  letter-spacing: 0.08em;
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--font-heading);
+  letter-spacing: 0.005em;
+  font-size: 19px;
+  font-weight: 500;
   color: var(--text);
-  padding: 12px 16px;
+  padding: 11px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -396,7 +397,7 @@ hr {
 }
 .obslog__header { margin-bottom: 4px; }
 .obslog__title {
-  font-family: var(--font-ui); font-weight: 600; font-size: 20px;
+  font-family: var(--font-heading); font-weight: 500; font-size: 23px;
   color: var(--text); letter-spacing: 0.01em;
 }
 .obslog__meta { margin-top: 6px; color: var(--text-dim); font-size: 12px; }
@@ -689,7 +690,7 @@ hr {
 }
 .tdetail__title { flex: 1; min-width: 0; }
 .tdetail__name {
-  font-family: var(--font-ui); font-weight: 600; font-size: 22px;
+  font-family: var(--font-heading); font-weight: 500; font-size: 24px;
   color: var(--text); letter-spacing: 0.005em; line-height: 1.2;
   display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
 }
@@ -854,7 +855,7 @@ hr {
   padding: 12px 16px;
 }
 .cal__target-name {
-  font-family: var(--font-ui); font-weight: 600; font-size: 18px;
+  font-family: var(--font-heading); font-weight: 500; font-size: 20px;
   color: var(--text); display: flex; align-items: baseline; gap: 9px;
 }
 .cal__target-type { font-family: var(--font-mono); font-size: 12px; }
@@ -864,7 +865,7 @@ hr {
 
 .cal__months { display: flex; flex-direction: column; gap: 24px; overflow-y: auto; }
 .cal-month__hdr {
-  font-family: var(--font-ui); font-weight: 600; font-size: 18px;
+  font-family: var(--font-heading); font-weight: 500; font-size: 20px;
   color: var(--text); padding: 0 2px 10px;
 }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
