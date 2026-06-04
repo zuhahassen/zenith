@@ -250,7 +250,7 @@ function DayCell({
       }}
     >
       <span className="cal-cell__day">{day}</span>
-      {t === "best" && <span className="cal-cell__star">★</span>}
+      {t === "best" && <span className="cal-cell__star">✦</span>}
       {night && show && (
         <CellPopover
           iso={iso}
