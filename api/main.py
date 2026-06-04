@@ -928,12 +928,13 @@ def _mag_limit_for_aperture(aperture_mm: float) -> float:
 
 
 _OPEN_METEO_HOURLY_URL = "https://api.open-meteo.com/v1/forecast"
-# wind_u_10m / wind_v_10m are requested but not part of the standard
-# Open-Meteo forecast schema, so we derive them from speed + direction
-# below. Listing them is harmless (the API ignores unknown variables).
+# wind_u_10m / wind_v_10m are NOT part of the Open-Meteo forecast schema and
+# must not be requested: Open-Meteo rejects the whole request with HTTP 400 on
+# any unknown hourly variable (it does not silently ignore them). We derive the
+# u/v components from windspeed_10m + winddirection_10m via _wind_components.
 _HOURLY_VARS = (
     "temperature_2m,relativehumidity_2m,dewpoint_2m,pressure_msl,"
-    "windspeed_10m,winddirection_10m,wind_u_10m,wind_v_10m,cloudcover"
+    "windspeed_10m,winddirection_10m,cloudcover"
 )
 # Pressure-level (upper-air) fields. Open-Meteo's free forecast endpoint
 # exposes these via the ``_<level>hPa`` suffix in ``hourly`` and reports wind
