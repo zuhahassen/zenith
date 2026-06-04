@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -565,9 +565,11 @@ async def get_target_calendar(body: CalendarRequest, response: Response) -> dict
 
     target = resolve_target(body.target_name)
     if target is None:
-        raise HTTPException(
+        # Top-level error/suggestion (not wrapped in FastAPI's "detail") so the
+        # frontend + smoke test read it directly.
+        return JSONResponse(
             status_code=404,
-            detail={
+            content={
                 "error": "Target not found",
                 "suggestion": "Try the SIMBAD name e.g. 'M 42' or 'NGC 891'",
             },

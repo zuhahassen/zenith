@@ -56,6 +56,7 @@ class Test:
         *,
         edge_only: bool = False,
         timeout: float = DEFAULT_TIMEOUT,
+        expect_status: int = 200,
     ):
         self.name = name
         self.method = method
@@ -64,6 +65,8 @@ class Test:
         self.assertions = assertions
         self.edge_only = edge_only
         self.timeout = timeout
+        # Expected HTTP status for the happy path (e.g. 404 for not-found tests).
+        self.expect_status = expect_status
 
 
 # Real contracts (see api/main.py and worker/index.js + worker/db.js).
@@ -167,6 +170,42 @@ TESTS: list[Test] = [
         lambda r: any(t.get("filter_windows") for t in r["targets"][:10]),
         lambda r: any(t.get("fov_note") for t in r["targets"][:10]),
     ], timeout=PLAN_TIMEOUT),
+
+    # Auth: edge-only (Cloudflare Worker + D1). Returns 404 against the FastAPI
+    # origin (skip), or the generic "check your email" message via the Worker.
+    # We never assert email delivery.
+    Test("auth request", "POST", "/api/auth/request", {
+        "email": "smoke-test@example.com",
+    }, [
+        lambda r: "message" in r or "ok" in r,
+    ], edge_only=True),
+
+    # Multi-night calendar: M 42 over two months. Served by both the FastAPI
+    # origin and the Worker (KV-cached), so it is NOT edge-only.
+    Test("calendar M42", "POST", "/api/calendar", {
+        "lat": 37.87, "lon": -122.27,
+        "target_name": "M 42",
+        "start_date": "2026-11-01",
+        "end_date": "2026-12-31",
+        "aperture_mm": 150,
+    }, [
+        lambda r: "nights" in r,
+        lambda r: len(r["nights"]) > 0,
+        lambda r: "target" in r,
+        lambda r: r["target"]["name"] != "",
+        lambda r: any(n["observable"] for n in r["nights"]),
+        lambda r: all("quality_score" in n or not n["observable"] for n in r["nights"]),
+    ], timeout=PLAN_TIMEOUT),
+
+    # Unresolvable target → 404 with a top-level error + suggestion.
+    Test("calendar not found", "POST", "/api/calendar", {
+        "lat": 37.87, "lon": -122.27,
+        "target_name": "NotARealObject12345",
+        "start_date": "2026-06-01",
+        "end_date": "2026-06-30",
+    }, [
+        lambda r: "error" in r,
+    ], expect_status=404, timeout=PLAN_TIMEOUT),
 ]
 
 
@@ -191,8 +230,11 @@ def run_test(client: httpx.Client, base_url: str, test: Test) -> str:
         print(f"{YELLOW('○')} {test.name} {DIM(f'({elapsed:.2f}s)')} — skip (edge-only, not served at this base URL)")
         return "skip"
 
-    if resp.status_code != 200:
-        print(f"{RED('✗')} {test.name} {DIM(f'({elapsed:.2f}s)')} — HTTP {resp.status_code}")
+    if resp.status_code != test.expect_status:
+        print(
+            f"{RED('✗')} {test.name} {DIM(f'({elapsed:.2f}s)')} — "
+            f"HTTP {resp.status_code} (expected {test.expect_status})"
+        )
         _dump(resp.text)
         return "fail"
 
