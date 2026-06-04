@@ -20,9 +20,19 @@ interface Props {
   mode: Mode;
   rating: number;
   onRate: (name: string, rating: number) => void;
+  // Deep-link into the multi-night calendar for this target.
+  onViewCalendar?: (targetName: string) => void;
 }
 
-export function TargetDetail({ target, aiPlan, predictedSeeing, mode, rating, onRate }: Props) {
+export function TargetDetail({
+  target,
+  aiPlan,
+  predictedSeeing,
+  mode,
+  rating,
+  onRate,
+  onViewCalendar,
+}: Props) {
   const info = typeInfo(target.kind);
   const aiItem = aiPlan?.ordered_targets.find((t) => t.name === target.name);
   const why = aiItem?.why || target.why;
@@ -155,6 +165,14 @@ export function TargetDetail({ target, aiPlan, predictedSeeing, mode, rating, on
             {target.score.toFixed(3)}
           </span>
         </div>
+        {onViewCalendar && (
+          <button
+            className="tdetail__callink"
+            onClick={() => onViewCalendar(target.name)}
+          >
+            📅 View {target.name} across upcoming months →
+          </button>
+        )}
       </div>
 
       {why && (
