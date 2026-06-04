@@ -221,6 +221,48 @@ export interface HistoryResponse {
   sessions: HistorySession[];
 }
 
+// --- Multi-night calendar (POST /api/calendar) ----------------------------
+
+export interface CalendarRequest {
+  lat: number;
+  lon: number;
+  target_name: string;
+  start_date: string; // YYYY-MM-DD inclusive
+  end_date: string; // YYYY-MM-DD inclusive (≤ 90 days from start)
+  aperture_mm?: number;
+  min_alt_deg?: number;
+}
+
+export interface CalendarNight {
+  date: string; // YYYY-MM-DD
+  observable: boolean;
+  window_start: string | null; // ISO UTC
+  window_end: string | null;
+  window_hours: number | null;
+  peak_alt_deg: number | null;
+  peak_time: string | null;
+  moon_illumination: number; // 0..1
+  moon_separation_deg: number | null;
+  predicted_seeing: number | null; // only within ~7 days
+  quality_score: number | null; // 0..1 for observable nights
+  dark_window_hours: number;
+}
+
+export interface CalendarTarget {
+  name: string;
+  common_name: string | null;
+  ra: number;
+  dec: number;
+  type: string;
+  magnitude: number | null;
+  angular_size: [number | null, number | null];
+}
+
+export interface CalendarResponse {
+  target: CalendarTarget;
+  nights: CalendarNight[];
+}
+
 export interface ExplainRequest {
   question: string;
   plan_context: Record<string, unknown>;

@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
 import { AuthPanel } from "./components/AuthPanel";
+import type { CalendarDeepLink } from "./components/CalendarView";
 import { SetupForm } from "./components/SetupForm";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TonightView } from "./components/TonightView";
@@ -23,6 +24,9 @@ const SettingsView = lazy(() =>
 const HistoryView = lazy(() =>
   import("./components/HistoryView").then((m) => ({ default: m.HistoryView })),
 );
+const CalendarView = lazy(() =>
+  import("./components/CalendarView").then((m) => ({ default: m.CalendarView })),
+);
 const QAPanel = lazy(() => import("./components/QAPanel").then((m) => ({ default: m.QAPanel })));
 
 export default function App() {
@@ -31,6 +35,10 @@ export default function App() {
   const [view, setView] = useState<View>("tonight");
   const [selectedTarget, setSelectedTarget] = useState<ScoredTarget | null>(null);
   const [ratings, setRatings] = useState<Record<string, number>>({});
+  // Calendar deep-link (set from a target detail) + the target to auto-select
+  // once a "Plan this night" plan finishes loading.
+  const [calendarLink, setCalendarLink] = useState<CalendarDeepLink | null>(null);
+  const [pendingSelect, setPendingSelect] = useState<string | null>(null);
 
   // Auth state — purely additive. `authTick` is bumped to force a re-read of
   // localStorage after sign-in/sign-out without threading state everywhere.
@@ -138,6 +146,46 @@ export default function App() {
     saveSettings(s);
   }
 
+  // Deep-link from a target's detail panel into its season calendar:
+  // today → today + 90 days, auto-submitted by CalendarView.
+  function viewCalendar(targetName: string) {
+    const today = new Date().toISOString().slice(0, 10);
+    const end = new Date();
+    end.setUTCDate(end.getUTCDate() + 90);
+    setCalendarLink({ target: targetName, start: today, end: end.toISOString().slice(0, 10) });
+    setView("calendar");
+  }
+
+  // "Plan this night" from a calendar cell: plan that date at the current site,
+  // then try to auto-select the target once the plan returns.
+  function planNight(targetName: string, dateISO: string) {
+    if (settings.lat == null || settings.lon == null) return;
+    setPendingSelect(targetName);
+    submit(
+      {
+        lat: settings.lat,
+        lon: settings.lon,
+        aperture_mm: settings.aperture_mm,
+        mode: settings.mode,
+        bortle_class: settings.bortle_class,
+        catalog_filter: settings.catalog === "all" ? null : settings.catalog,
+        date: dateISO,
+      },
+      settings.locationLabel || `${settings.lat.toFixed(2)}, ${settings.lon.toFixed(2)}`,
+    );
+  }
+
+  // After a plan-this-night submission resolves, select the matching target.
+  useEffect(() => {
+    if (!pendingSelect || !data) return;
+    const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
+    const match = data.targets.find(
+      (t) => norm(t.name) === norm(pendingSelect) || norm(t.common_name ?? "") === norm(pendingSelect),
+    );
+    if (match) setSelectedTarget(match);
+    setPendingSelect(null);
+  }, [data, pendingSelect]);
+
   const showRightPanel = Boolean(data);
   const locLabel = settings.locationLabel || (data ? `${data.request.lat.toFixed(2)}, ${data.request.lon.toFixed(2)}` : "");
 
@@ -173,6 +221,8 @@ export default function App() {
             onPlanAgain={planAgain}
             onSaveSettings={persistSettings}
             onResetSettings={() => persistSettings(resetSettings())}
+            calendarLink={calendarLink}
+            onPlanNight={planNight}
           />
         </div>
 
@@ -187,6 +237,7 @@ export default function App() {
                   mode={data.request.mode}
                   rating={ratings[selectedTarget.name] ?? 0}
                   onRate={rate}
+                  onViewCalendar={viewCalendar}
                 />
                 <Suspense fallback={null}>
                   <QAPanel planContext={planContextFor(data)} />
@@ -216,6 +267,8 @@ interface MainContentProps {
   onPlanAgain: (session: HistorySession) => void;
   onSaveSettings: (s: ZenithSettings) => void;
   onResetSettings: () => void;
+  calendarLink: CalendarDeepLink | null;
+  onPlanNight: (targetName: string, dateISO: string) => void;
 }
 
 function MainContent({
@@ -230,6 +283,8 @@ function MainContent({
   onPlanAgain,
   onSaveSettings,
   onResetSettings,
+  calendarLink,
+  onPlanNight,
 }: MainContentProps) {
   if (view === "compare") {
     return (
@@ -237,6 +292,17 @@ function MainContent({
         <div className="panel-title">Site Comparison</div>
         <Suspense fallback={<div className="center-load">Loading…</div>}>
           <CompareView settings={settings} />
+        </Suspense>
+      </>
+    );
+  }
+
+  if (view === "calendar") {
+    return (
+      <>
+        <div className="panel-title">Target Calendar</div>
+        <Suspense fallback={<div className="center-load">Loading…</div>}>
+          <CalendarView settings={settings} deepLink={calendarLink} onPlanNight={onPlanNight} />
         </Suspense>
       </>
     );

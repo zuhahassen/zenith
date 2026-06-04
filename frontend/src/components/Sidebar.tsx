@@ -1,13 +1,14 @@
-import { GitCompare, History, Moon, Settings, Telescope } from "lucide-react";
+import { CalendarDays, GitCompare, History, Moon, Settings, Telescope } from "lucide-react";
 import { useCommunityFavorites } from "../hooks/useCommunityFavorites";
 import { seeingQuality } from "../lib/format";
 import type { PlanResponse } from "../types/zenith";
 
-export type View = "tonight" | "compare" | "history" | "settings";
+export type View = "tonight" | "compare" | "calendar" | "history" | "settings";
 
 const NAV: { id: View; label: string; icon: React.ReactNode }[] = [
   { id: "tonight", label: "Tonight", icon: <Telescope size={15} /> },
   { id: "compare", label: "Compare Sites", icon: <GitCompare size={15} /> },
+  { id: "calendar", label: "Calendar", icon: <CalendarDays size={15} /> },
   { id: "history", label: "History", icon: <History size={15} /> },
   { id: "settings", label: "Settings", icon: <Settings size={15} /> },
 ];
