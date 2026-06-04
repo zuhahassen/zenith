@@ -22,8 +22,10 @@ cone) now returns 404, and the ``fitscut`` ``red=merged`` position shortcut is
 not a valid selector. The HLA SIAP path below is the working equivalent.
 
 Results are cached in a small in-memory LRU keyed by
-``(target_name, round(ra, 2), round(dec, 2))`` so repeated targets within a
-session don't re-hit the network.
+``(target_name, round(ra, 3), round(dec, 3))`` so repeated targets within a
+session don't re-hit the network. Rounding to 3 decimals (~0.06 deg) keeps the
+key stable across float jitter while staying fine enough that two distinct
+deep-sky objects never collide onto the same entry (2 decimals, ~0.6 deg, did).
 """
 
 from __future__ import annotations
@@ -89,6 +91,7 @@ class MASTClient:
         key = self._cache_key(target_name, ra, dec)
         if key in self._cache:
             self._cache.move_to_end(key)
+            logger.info("Image cache hit: %s (%.3f, %.3f)", target_name, ra, dec)
             return self._cache[key]
 
         # Primary: a real HST color cutout from the Hubble Legacy Archive when
@@ -222,7 +225,9 @@ class MASTClient:
         }
 
     def _cache_key(self, target_name: str, ra: float, dec: float) -> tuple:
-        return (target_name, round(float(ra), 2), round(float(dec), 2))
+        # 3 decimals (~0.06 deg): fine enough that two distinct deep-sky
+        # objects never share a key, coarse enough to absorb float jitter.
+        return (target_name, round(float(ra), 3), round(float(dec), 3))
 
     def _store(self, key: tuple, value: Optional[dict]) -> None:
         self._cache[key] = value

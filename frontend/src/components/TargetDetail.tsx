@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ThumbsDown, ThumbsUp, Telescope } from "lucide-react";
 import {
   airmassLabel,
@@ -30,6 +31,13 @@ export function TargetDetail({ target, aiPlan, predictedSeeing, mode, rating, on
   const isAstro = mode === "astrophotographer";
   const filterWindows = target.filter_windows ?? null;
 
+  // Reset to the loading state whenever the selected target changes so the
+  // shimmer shows for the new image instead of briefly flashing the old one.
+  const [imgState, setImgState] = useState<"loading" | "loaded" | "error">("loading");
+  useEffect(() => {
+    setImgState(refImage ? "loading" : "error");
+  }, [target.name, refImage]);
+
   return (
     <div className="tdetail">
       <div className="tdetail__head">
@@ -60,8 +68,25 @@ export function TargetDetail({ target, aiPlan, predictedSeeing, mode, rating, on
 
       {refImage ? (
         <div className="tdetail__img">
-          <img src={refImage.url} alt={`${target.name} reference`} />
-          <span className="tdetail__img-src">{refImage.source}</span>
+          {imgState === "loading" && (
+            <div className="img-placeholder" aria-label="Loading reference image" />
+          )}
+          {imgState === "error" ? (
+            <div className="tdetail__img-ph">
+              <Telescope size={22} strokeWidth={1.25} />
+              No reference image available
+            </div>
+          ) : (
+            <img
+              key={`ref-img-${target.name}-${target.ra_deg}`}
+              src={refImage.url}
+              alt={`${target.name} reference`}
+              style={{ display: imgState === "loaded" ? "block" : "none" }}
+              onLoad={() => setImgState("loaded")}
+              onError={() => setImgState("error")}
+            />
+          )}
+          {imgState === "loaded" && <span className="tdetail__img-src">{refImage.source}</span>}
         </div>
       ) : (
         <div className="tdetail__img-ph">

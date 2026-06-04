@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { SeeingStrip } from "./SeeingStrip";
 import { TargetTable } from "./TargetTable";
 import { durationLabel } from "../lib/format";
@@ -15,6 +15,19 @@ interface Props {
 }
 
 export function TonightView({ data, selectedName, onSelect }: Props) {
+  // Warm the browser image cache for the top targets so their reference photos
+  // are already decoded by the time the observer opens a detail card.
+  useEffect(() => {
+    const ordered = data.ai_plan?.ordered_targets ?? [];
+    ordered.slice(0, 5).forEach((t) => {
+      const url = t.reference_image?.url;
+      if (url) {
+        const img = new Image();
+        img.src = url;
+      }
+    });
+  }, [data.ai_plan]);
+
   const seeingVals = data.seeing_forecast
     .map((s) => s.predicted_seeing_arcsec)
     .filter((v) => v > 0);

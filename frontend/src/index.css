@@ -512,6 +512,25 @@ button.primary:hover { background: #324b61; }
   gap: 8px; color: var(--text-faint); font-size: 12px;
 }
 
+/* Reference-image loading shimmer — same footprint as the rendered image so
+   the panel doesn't jump when the photo arrives. */
+.img-placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+  background: linear-gradient(
+    90deg,
+    var(--bg-panel) 0%,
+    var(--bg-hover) 50%,
+    var(--bg-panel) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .kv-grid { padding: 4px 14px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
 .kv { display: flex; flex-direction: column; }
 .kv__k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
