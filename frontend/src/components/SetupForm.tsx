@@ -4,7 +4,13 @@ import { estimateBortle } from "../lib/lightPollution";
 import type { ZenithSettings } from "../lib/settings";
 import type { CatalogFilter, Mode, PlanRequest } from "../types/zenith";
 
-const APERTURES = [70, 100, 150, 200, 300];
+const APERTURES = [70, 100, 127, 150, 200, 300];
+const SKY_LEVELS: { label: string; bortle: number }[] = [
+  { label: "City", bortle: 8 },
+  { label: "Suburban", bortle: 6 },
+  { label: "Rural", bortle: 4 },
+  { label: "Dark", bortle: 2 },
+];
 const PIPELINE_STAGES = [
   "Resolving location…",
   "Computing darkness window…",
@@ -35,7 +41,6 @@ export function SetupForm({ settings, loading, onSubmit }: Props) {
   );
   const [date, setDate] = useState<string>(todayISO());
   const [aperture, setAperture] = useState(settings.aperture_mm);
-  const [customAp, setCustomAp] = useState("");
   const [mode, setMode] = useState<Mode>(settings.mode);
   const [bortle, setBortle] = useState<number | null>(settings.bortle_class);
   const [catalog, setCatalog] = useState<"all" | CatalogFilter>(settings.catalog);
@@ -58,11 +63,10 @@ export function SetupForm({ settings, loading, onSubmit }: Props) {
 
   function submit() {
     if (!coords) return;
-    const ap = customAp ? Number(customAp) : aperture;
     const req: PlanRequest = {
       lat: coords.lat,
       lon: coords.lon,
-      aperture_mm: ap,
+      aperture_mm: aperture,
       date,
       mode,
       bortle_class: bortle,
@@ -79,170 +83,183 @@ export function SetupForm({ settings, loading, onSubmit }: Props) {
   }
 
   return (
-    <div className="setup-wrap">
-      <div className="fieldset">
-        <div className="fieldset__legend">Tonight's Session</div>
-        <div className="form-grid">
-          <div className="form-row">
-            <span className="form-row__label">Location</span>
-            <div className="form-row__control">
-              <GeoInput
-                label={label}
-                onLabel={setLabel}
-                onPick={(r) => {
-                  setLabel(r.label);
-                  setCoords({ lat: r.lat, lon: r.lon });
-                }}
-              />
-              <UseGpsButton
-                onFix={(lat, lon) => {
-                  setCoords({ lat, lon });
-                  setLabel(`${lat.toFixed(3)}, ${lon.toFixed(3)}`);
-                }}
-              />
-            </div>
+    <div className="obslog-wrap">
+      <form
+        className="obslog"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <header className="obslog__header">
+          <h1 className="obslog__title">New Observation Session</h1>
+          <div className="obslog__meta mono">
+            {date}
+            {label ? `  ·  ${label}` : ""}
           </div>
+        </header>
 
-          <div className="form-row">
-            <span className="form-row__label">Date</span>
-            <div className="form-row__control">
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              <button onClick={() => setDate(todayISO())}>Tonight</button>
-            </div>
+        <div className="field">
+          <label className="label">Location</label>
+          <div className="field__row">
+            <GeoInput
+              label={label}
+              onLabel={setLabel}
+              onPick={(r) => {
+                setLabel(r.label);
+                setCoords({ lat: r.lat, lon: r.lon });
+              }}
+            />
+            <UseGpsButton
+              onFix={(lat, lon) => {
+                setCoords({ lat, lon });
+                setLabel(`${lat.toFixed(3)}, ${lon.toFixed(3)}`);
+              }}
+            />
           </div>
+        </div>
 
-          <div className="form-row">
-            <span className="form-row__label">Aperture</span>
-            <div className="form-row__control">
-              <div className="segmented">
-                {APERTURES.map((a) => (
-                  <button
-                    key={a}
-                    className={!customAp && aperture === a ? "active" : ""}
-                    onClick={() => {
-                      setAperture(a);
-                      setCustomAp("");
-                    }}
-                  >
-                    {a}
-                  </button>
-                ))}
-              </div>
-              <input
-                type="number"
-                placeholder="custom mm"
-                value={customAp}
-                style={{ width: 90 }}
-                onChange={(e) => setCustomAp(e.target.value)}
-              />
-            </div>
+        <div className="field">
+          <label className="label">Date</label>
+          <div className="field__row">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <button type="button" onClick={() => setDate(todayISO())}>
+              Tonight
+            </button>
           </div>
+        </div>
 
-          <div className="form-row">
-            <span className="form-row__label">Mode</span>
-            <div className="form-row__control">
-              <div className="segmented">
-                <button
-                  className={mode === "observer" ? "active" : ""}
-                  onClick={() => setMode("observer")}
-                >
-                  Visual Observer
-                </button>
-                <button
-                  className={mode === "astrophotographer" ? "active" : ""}
-                  onClick={() => setMode("astrophotographer")}
-                >
-                  Astrophotographer
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <span className="form-row__label">Sky</span>
-            <div className="form-row__control">
-              <select
-                value={bortle ?? "auto"}
-                onChange={(e) =>
-                  setBortle(e.target.value === "auto" ? null : Number(e.target.value))
-                }
+        <div className="field">
+          <label className="label">Aperture · mm</label>
+          <div className="ap-grid">
+            {APERTURES.map((a) => (
+              <button
+                type="button"
+                key={a}
+                className={`ap-box ${aperture === a ? "on" : ""}`}
+                onClick={() => setAperture(a)}
               >
-                <option value="auto">
-                  Auto{estBortle ? ` (est. Bortle ${estBortle})` : ""}
-                </option>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((b) => (
-                  <option key={b} value={b}>
-                    Bortle {b}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <span className="form-row__label">Catalog</span>
-            <div className="form-row__control">
-              <select value={catalog} onChange={(e) => setCatalog(e.target.value as Props["settings"]["catalog"])}>
-                <option value="all">All targets</option>
-                <option value="messier">Messier</option>
-                <option value="caldwell">Caldwell</option>
-                <option value="herschel400">Herschel 400</option>
-              </select>
-            </div>
-          </div>
-
-          <div className={`astro-collapse ${mode === "astrophotographer" ? "open" : ""}`}>
-            <div className="form-row" style={{ paddingTop: 4 }}>
-              <span className="form-row__label">Focal</span>
-              <div className="form-row__control">
-                <input
-                  type="number"
-                  value={focal}
-                  style={{ width: 90 }}
-                  onChange={(e) => setFocal(Number(e.target.value))}
-                />
-                <span className="field-hint">mm</span>
-                <input
-                  type="number"
-                  value={sensorW}
-                  step="0.1"
-                  style={{ width: 70 }}
-                  onChange={(e) => setSensorW(Number(e.target.value))}
-                />
-                <span className="field-hint">×</span>
-                <input
-                  type="number"
-                  value={sensorH}
-                  step="0.1"
-                  style={{ width: 70 }}
-                  onChange={(e) => setSensorH(Number(e.target.value))}
-                />
-                <span className="field-hint">
-                  mm · FoV <span className="data">{fovDeg}°</span>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="progress-row">
-              <div className="progress-bar">
-                <div className="progress-bar__sweep" />
-              </div>
-              <span className="progress-status">
-                {PIPELINE_STAGES[Math.min(elapsed, PIPELINE_STAGES.length - 1)]}
-              </span>
-              <span className="progress-elapsed">{elapsed}s</span>
-            </div>
-          ) : (
-            <div className="setup-actions">
-              <button className="primary" disabled={!coords} onClick={submit}>
-                Plan Tonight's Session →
+                {a}
               </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <label className="label">Mode</label>
+          <div className="mode-toggle">
+            <button
+              type="button"
+              className={`mode-btn ${mode === "observer" ? "on" : ""}`}
+              onClick={() => setMode("observer")}
+            >
+              Visual Observer
+            </button>
+            <button
+              type="button"
+              className={`mode-btn ${mode === "astrophotographer" ? "on" : ""}`}
+              onClick={() => setMode("astrophotographer")}
+            >
+              Astrophotographer
+            </button>
+          </div>
+        </div>
+
+        <div className="field">
+          <label className="label">Sky darkness</label>
+          <div className="sky-row">
+            {SKY_LEVELS.map((s) => (
+              <button
+                type="button"
+                key={s.label}
+                className={`sky-btn ${bortle === s.bortle ? "on" : ""}`}
+                onClick={() => setBortle(s.bortle)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          {estBortle && (
+            <div className="field__hint mono">
+              auto-estimate · Bortle {estBortle}
+              {bortle !== null && (
+                <>
+                  {"  ·  "}
+                  <button type="button" className="linkbtn" onClick={() => setBortle(null)}>
+                    use auto
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
-      </div>
+
+        <div className="field">
+          <label className="label">Catalog</label>
+          <select
+            className="field__select"
+            value={catalog}
+            onChange={(e) => setCatalog(e.target.value as Props["settings"]["catalog"])}
+          >
+            <option value="all">All targets</option>
+            <option value="messier">Messier</option>
+            <option value="caldwell">Caldwell</option>
+            <option value="herschel400">Herschel 400</option>
+          </select>
+        </div>
+
+        {mode === "astrophotographer" && (
+          <details className="imaging">
+            <summary className="imaging__summary">Imaging equipment</summary>
+            <div className="imaging__body">
+              <div className="imaging__row">
+                <div className="field">
+                  <label className="label">Focal length · mm</label>
+                  <input
+                    type="number"
+                    value={focal}
+                    onChange={(e) => setFocal(Number(e.target.value))}
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">Sensor W × H · mm</label>
+                  <div className="field__row">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={sensorW}
+                      onChange={(e) => setSensorW(Number(e.target.value))}
+                    />
+                    <span className="imaging__x">×</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={sensorH}
+                      onChange={(e) => setSensorH(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="imaging__fov mono">field of view ≈ {fovDeg}°</div>
+            </div>
+          </details>
+        )}
+
+        {loading ? (
+          <div className="obslog__loading">
+            <div className="progress-bar">
+              <div className="progress-bar__sweep" />
+            </div>
+            <div className="progress-status mono">
+              {PIPELINE_STAGES[Math.min(elapsed, PIPELINE_STAGES.length - 1)]} · {elapsed}s
+            </div>
+          </div>
+        ) : (
+          <button type="submit" className="primary obslog__submit" disabled={!coords}>
+            Plan Tonight's Session →
+          </button>
+        )}
+      </form>
     </div>
   );
 }
