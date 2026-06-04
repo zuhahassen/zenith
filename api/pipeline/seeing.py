@@ -59,13 +59,19 @@ class SeeingPredictor:
 
     Args:
         model_path: Path to a serialized XGBoost model (``.json`` / ``.ubj``).
-            When ``None`` (the default), reads ``MODEL_PATH`` env var. When
-            that's also unset or the file is missing, the predictor returns
-            climatological fallback values and logs a warning at predict-time.
+            When ``None`` (the default), reads the ``SEEING_MODEL_PATH`` env
+            var (the name used by the systemd unit and README), falling back
+            to the legacy ``MODEL_PATH``. When both are unset or the file is
+            missing, the predictor returns climatological fallback values and
+            logs a warning at predict-time.
     """
 
     def __init__(self, model_path: Optional[str] = None):
-        resolved = model_path or os.environ.get("MODEL_PATH")
+        resolved = (
+            model_path
+            or os.environ.get("SEEING_MODEL_PATH")
+            or os.environ.get("MODEL_PATH")
+        )
         if not resolved and DEFAULT_MODEL_PATH.exists():
             resolved = str(DEFAULT_MODEL_PATH)
         self.model_path = resolved
@@ -144,7 +150,7 @@ class SeeingPredictor:
             logger.warning(
                 "SeeingPredictor: no model loaded (%s); using climatological "
                 "fallback (%.1f arcsec, confidence %.1f)",
-                self._load_error or "MODEL_PATH unset",
+                self._load_error or "SEEING_MODEL_PATH unset",
                 FALLBACK_FWHM_ARCSEC, FALLBACK_CONFIDENCE,
             )
             type(self)._fallback_warned = True
