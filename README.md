@@ -113,8 +113,13 @@ constant so the pipeline degrades gracefully.
   and XGBoost seeing inference.
 - **HTTP API** (FastAPI). `/api/plan` returns the deterministic plan;
   `/api/plan-ai` augments it with an optional narrative ordering layer that
-  degrades to the deterministic result when unavailable; `/api/explain` answers
-  follow-up questions; `/api/feedback` persists per-target ratings.
+  degrades to the deterministic result when unavailable, attaching a one-line
+  rationale and a jargon-free `observer_note` (what a visual observer actually
+  sees in the eyepiece) per target; `/api/explain` answers follow-up questions;
+  `/api/compare-sites` scores 2–5 candidate sites for the same night on a
+  transparent weighted composite; `/api/feedback`, `/api/community-favorites`,
+  and `/api/history` persist and surface per-user ratings, crowd-sourced target
+  quality, and past sessions through the Worker's D1 store.
 
 Production runs on Cloudflare's edge plus a DigitalOcean droplet:
 
@@ -124,13 +129,34 @@ Production runs on Cloudflare's edge plus a DigitalOcean droplet:
   artifacts.
 - **DigitalOcean droplet** runs `uvicorn` behind nginx.
 
+## Frontend interface
+
+The React app is a single persistent three-panel workspace styled after
+professional observatory software (dense data tables, 1px rules, monospaced
+figures, a muted warm-neutral dark theme):
+
+- **Left rail** — view navigation (Tonight, Compare Sites, History, Settings),
+  a nearby community-favorites block, and a live session status readout (seeing
+  model, Bortle, mean seeing, dark window).
+- **Centre** — the active view. *Tonight* shows a session facts strip, a thin
+  seeing-forecast sparkline, a sortable/filterable/paginated target data table,
+  and a rank-ordered visibility timeline with a live "now" marker; the table
+  and timeline share selection state.
+- **Right rail** — the selected target's detail (coordinates, visibility math,
+  Claude's rationale, the plain-English `observer_note`, astrophotography filter
+  schedule, and a reference image) plus an inline terminal-style Q&A panel.
+
+Returning observers' equipment and site defaults persist to `localStorage` and
+pre-fill the setup form. Reference images are preloaded for the top targets so
+they are ready before a card is opened.
+
 ## Stack
 
 | Layer    | Tools                                                          |
 |----------|----------------------------------------------------------------|
 | Backend  | FastAPI, Astropy, Astroquery, XGBoost, NumPy, httpx            |
 | Training | ERA5 (cdsapi), xarray, netCDF4 (offline data prep only)        |
-| Frontend | React 18, Vite, TypeScript, recharts, @tanstack/react-query    |
+| Frontend | React 18, Vite, TypeScript, recharts, @tanstack/react-query, lucide-react, date-fns |
 | Edge     | Cloudflare Workers, Pages, KV, D1, R2                          |
 
 ## Local development
@@ -270,11 +296,15 @@ zenith/
 ├── worker/                  # Cloudflare Worker + D1 schema
 ├── frontend/                # React + Vite + TS
 │   └── src/
-│       ├── components/      # SetupForm, SessionTimeline, TargetCard, …
-│       ├── hooks/           # usePlan, useExplainer
+│       ├── components/      # Sidebar, SetupForm, TonightView, TargetTable,
+│       │                    #   Timeline, SeeingStrip, TargetDetail, QAPanel,
+│       │                    #   CompareView, HistoryView, SettingsView
+│       ├── hooks/           # usePlan, useExplainer, useCompareSites, …
+│       ├── lib/             # format, settings, feedback, lightPollution
 │       └── types/zenith.ts
 ├── tests/
-├── scripts/                 # deploy_backend.sh, update_backend.sh, setup_nginx.conf
+├── scripts/                 # deploy_backend.sh, update_backend.sh,
+│                            #   smoke_test.py, setup_nginx.conf
 ├── requirements.txt
 ├── pytest.ini
 └── .env.example
@@ -292,8 +322,12 @@ zenith/
 | Synthetic training path       | Implemented | `train_xgb.py` default                                       |
 | ERA5 training path            | Implemented | Cn^2 -> Fried -> FWHM label derivation (`era5.py`)           |
 | Feedback persistence          | Implemented | Per-target ratings to D1 via the Worker                      |
-| Edge (Workers/Pages/KV/D1)    | Deployed    | Proxy, cache, and rating storage                             |
-| Reference imagery (MAST)      | Partial     | Fetch path scaffolded                                        |
+| Community favorites           | Implemented | Crowd-sourced target votes aggregated in D1, surfaced in the rail |
+| Site comparison               | Implemented | `/api/compare-sites`, weighted composite over 2–5 sites      |
+| Session history               | Implemented | Plans summarised to D1, browsable in the History view        |
+| Edge (Workers/Pages/KV/D1)    | Deployed    | Proxy, cache, rating/history storage                         |
+| Reference imagery (MAST)      | Implemented | HLA HST cutout with SkyView DSS2 fallback, LRU-cached        |
+| Smoke test                    | Implemented | `scripts/smoke_test.py` covers every endpoint, CI exit codes |
 | Multi-night target calendar   | Planned     | Forward scan of observability for a chosen target            |
 
 ## References
