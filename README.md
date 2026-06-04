@@ -117,9 +117,11 @@ constant so the pipeline degrades gracefully.
   rationale and a jargon-free `observer_note` (what a visual observer actually
   sees in the eyepiece) per target; `/api/explain` answers follow-up questions;
   `/api/compare-sites` scores 2–5 candidate sites for the same night on a
-  transparent weighted composite; `/api/feedback`, `/api/community-favorites`,
-  and `/api/history` persist and surface per-user ratings, crowd-sourced target
-  quality, and past sessions through the Worker's D1 store.
+  transparent weighted composite; `/api/calendar` forward-scans a single
+  target's observability across a date range for the multi-night calendar;
+  `/api/feedback`, `/api/community-favorites`, and `/api/history` persist and
+  surface per-user ratings, crowd-sourced target quality, and past sessions
+  through the Worker's D1 store.
 
 Production runs on Cloudflare's edge plus a DigitalOcean droplet:
 
@@ -133,22 +135,33 @@ Production runs on Cloudflare's edge plus a DigitalOcean droplet:
 
 The React app is a single persistent three-panel workspace styled after
 professional observatory software (dense data tables, 1px rules, monospaced
-figures, a muted warm-neutral dark theme):
+figures, a warm-charcoal dark theme). Typography is editorial — Newsreader serif
+headings over an Inter body with Space Mono for all numeric data — and the fonts
+are bundled locally via `@fontsource` rather than a CDN:
 
-- **Left rail** — view navigation (Tonight, Compare Sites, History, Settings),
-  a nearby community-favorites block, and a live session status readout (seeing
-  model, Bortle, mean seeing, dark window).
+- **Left rail** — view navigation (Tonight, Compare Sites, Calendar, History,
+  Settings), a location-aware community-favorites block (intersected with the
+  night's visible targets), and a live session status readout (seeing model,
+  Bortle, mean seeing, dark window).
 - **Centre** — the active view. *Tonight* shows a session facts strip, a thin
   seeing-forecast sparkline, a sortable/filterable/paginated target data table,
   and a rank-ordered visibility timeline with a live "now" marker; the table
-  and timeline share selection state.
+  and timeline share selection state and per-object-type colour coding. Object
+  rows surface a popular common name (Andromeda Galaxy, Ring Nebula, …) beside
+  the catalogue designation. *History* lists past sessions and opens each one
+  in the right rail on click.
 - **Right rail** — the selected target's detail (coordinates, visibility math,
   Claude's rationale, the plain-English `observer_note`, astrophotography filter
-  schedule, and a reference image) plus an inline terminal-style Q&A panel.
+  schedule, and a reference image) plus an inline terminal-style Q&A panel. The
+  panel is dismissible and only appears on views that have a selection, so it
+  never lingers as an empty placeholder. A floating "Ask about the sky"
+  assistant is available globally and routes through the same `/api/explain`
+  proxy (no API key in the browser).
 
 Returning observers' equipment and site defaults persist to `localStorage` and
-pre-fill the setup form. Reference images are preloaded for the top targets so
-they are ready before a card is opened.
+pre-fill the setup form, including a UTC/local time-display preference honoured
+by every timestamp in the UI. Reference images are preloaded for the top
+targets so they are ready before a card is opened.
 
 ## Stack
 
@@ -156,7 +169,7 @@ they are ready before a card is opened.
 |----------|----------------------------------------------------------------|
 | Backend  | FastAPI, Astropy, Astroquery, XGBoost, NumPy, httpx            |
 | Training | ERA5 (cdsapi), xarray, netCDF4 (offline data prep only)        |
-| Frontend | React 18, Vite, TypeScript, recharts, @tanstack/react-query, lucide-react, date-fns |
+| Frontend | React 18, Vite, TypeScript, recharts, @tanstack/react-query, lucide-react, date-fns, @fontsource (Inter / Newsreader / Space Mono) |
 | Edge     | Cloudflare Workers, Pages, KV, D1, R2                          |
 
 ## Local development
@@ -278,7 +291,8 @@ wrangler pages deploy dist --project-name=zenith
 ```
 zenith/
 ├── api/
-│   ├── main.py              # /api/plan, /api/plan-ai, /api/explain, /api/health
+│   ├── main.py              # /api/plan, /api/plan-ai, /api/explain,
+│   │                        #   /api/compare-sites, /api/calendar, /api/health
 │   ├── agent/               # narrative ordering + Q&A layer (optional)
 │   ├── pipeline/
 │   │   ├── visibility.py    # twilight, transit, altitude, moon math
@@ -298,7 +312,8 @@ zenith/
 │   └── src/
 │       ├── components/      # Sidebar, SetupForm, TonightView, TargetTable,
 │       │                    #   Timeline, SeeingStrip, TargetDetail, QAPanel,
-│       │                    #   CompareView, HistoryView, SettingsView
+│       │                    #   FloatingChat, CompareView, CalendarView,
+│       │                    #   HistoryView, HistorySessionDetail, SettingsView
 │       ├── hooks/           # usePlan, useExplainer, useCompareSites, …
 │       ├── lib/             # format, settings, feedback, lightPollution
 │       └── types/zenith.ts
@@ -324,11 +339,11 @@ zenith/
 | Feedback persistence          | Implemented | Per-target ratings to D1 via the Worker                      |
 | Community favorites           | Implemented | Crowd-sourced target votes aggregated in D1, surfaced in the rail |
 | Site comparison               | Implemented | `/api/compare-sites`, weighted composite over 2–5 sites      |
-| Session history               | Implemented | Plans summarised to D1, browsable in the History view        |
+| Session history               | Implemented | Plans summarised to D1, browsable in the History view (side-panel detail) |
 | Edge (Workers/Pages/KV/D1)    | Deployed    | Proxy, cache, rating/history storage                         |
 | Reference imagery (MAST)      | Implemented | HLA HST cutout with SkyView DSS2 fallback, LRU-cached        |
 | Smoke test                    | Implemented | `scripts/smoke_test.py` covers every endpoint, CI exit codes |
-| Multi-night target calendar   | Planned     | Forward scan of observability for a chosen target            |
+| Multi-night target calendar   | Implemented | KV-cached forward scan of observability, quality-coded cells, deep-linked from a target |
 
 ## References
 - Ni, B., Jia, P., et al. (2022). *Data-driven seeing prediction for the LAMOST telescope.* MNRAS. — The 24-feature vector, trailing weather windows, and tree-model approach in `api/ml/features.py` and `api/pipeline/seeing.py`.
