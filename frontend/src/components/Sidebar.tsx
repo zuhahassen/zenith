@@ -1,16 +1,15 @@
-import { CalendarDays, GitCompare, History, Moon, Settings, Telescope } from "lucide-react";
+import { CalendarDays, Clock, MapPin, SlidersHorizontal, Telescope } from "lucide-react";
 import { useCommunityFavorites } from "../hooks/useCommunityFavorites";
-import { seeingQuality } from "../lib/format";
 import type { PlanResponse } from "../types/zenith";
 
 export type View = "tonight" | "compare" | "calendar" | "history" | "settings";
 
 const NAV: { id: View; label: string; icon: React.ReactNode }[] = [
-  { id: "tonight", label: "Tonight", icon: <Telescope size={15} /> },
-  { id: "compare", label: "Compare Sites", icon: <GitCompare size={15} /> },
-  { id: "calendar", label: "Calendar", icon: <CalendarDays size={15} /> },
-  { id: "history", label: "History", icon: <History size={15} /> },
-  { id: "settings", label: "Settings", icon: <Settings size={15} /> },
+  { id: "tonight", label: "Tonight", icon: <Telescope size={14} /> },
+  { id: "compare", label: "Compare Sites", icon: <MapPin size={14} /> },
+  { id: "calendar", label: "Calendar", icon: <CalendarDays size={14} /> },
+  { id: "history", label: "History", icon: <Clock size={14} /> },
+  { id: "settings", label: "Settings", icon: <SlidersHorizontal size={14} /> },
 ];
 
 interface Props {
@@ -23,13 +22,8 @@ export function Sidebar({ view, onNavigate, plan }: Props) {
   const community = useCommunityFavorites(5);
   const favorites = community.data?.favorites ?? [];
 
-  const seeingVals = (plan?.seeing_forecast ?? [])
-    .map((s) => s.predicted_seeing_arcsec)
-    .filter((v) => v > 0);
-  const meanSeeing = seeingVals.length
-    ? seeingVals.reduce((a, b) => a + b, 0) / seeingVals.length
-    : null;
   const darkWindow = darkWindowLabel(plan);
+  const modelLoaded = plan?.seeing_model_loaded ?? null;
 
   return (
     <nav className="sidebar">
@@ -50,7 +44,7 @@ export function Sidebar({ view, onNavigate, plan }: Props) {
 
       {favorites.length > 0 && (
         <div className="sidebar__block">
-          <div className="label sidebar__block-title">Community · nearby</div>
+          <div className="label sidebar__block-title">Nearby favorites</div>
           <div className="community-list">
             {favorites.map((f) => (
               <div className="community-row" key={f.target_name}>
@@ -67,42 +61,36 @@ export function Sidebar({ view, onNavigate, plan }: Props) {
       <div className="sidebar__block">
         <div className="status-block">
           <div className="status-row">
-            <span className="status-row__k">Seeing model</span>
-            <span className="status-row__v">
-              {plan ? (plan.seeing_model_loaded ? "loaded" : "fallback") : "—"}
+            <span className="status-row__k">Model</span>
+            <span
+              className="status-row__v"
+              style={{ color: modelLoaded == null ? undefined : modelLoaded ? "var(--good)" : "var(--poor)" }}
+            >
+              {modelLoaded == null ? "—" : modelLoaded ? "loaded" : "fallback"}
             </span>
           </div>
           <div className="status-row">
             <span className="status-row__k">Bortle</span>
-            <span className="status-row__v">{plan ? plan.bortle_class : "—"}</span>
-          </div>
-          <div className="status-row">
-            <span className="status-row__k">Seeing</span>
             <span className="status-row__v">
-              {meanSeeing != null ? (
-                <>
-                  <span
-                    className="status-dot"
-                    style={{ background: seeingQuality(meanSeeing).color }}
-                  />
-                  {meanSeeing.toFixed(1)}″
-                </>
-              ) : (
-                "—"
-              )}
+              {plan ? `${plan.bortle_class} · ${bortleWord(plan.bortle_class)}` : "—"}
             </span>
           </div>
           <div className="status-row">
-            <span className="status-row__k">
-              <Moon size={11} style={{ verticalAlign: "middle", marginRight: 3 }} />
-              Dark
-            </span>
+            <span className="status-row__k">Darkness</span>
             <span className="status-row__v">{darkWindow}</span>
           </div>
         </div>
       </div>
     </nav>
   );
+}
+
+// Coarse sky-brightness descriptor for the Bortle class shown in the status block.
+function bortleWord(b: number): string {
+  if (b <= 3) return "rural";
+  if (b <= 4) return "rural/suburban";
+  if (b <= 7) return "suburban";
+  return "city";
 }
 
 // Derive a coarse dark-window label from the seeing-forecast slot span — the

@@ -292,49 +292,57 @@ hr {
   flex-direction: column;
   overflow: hidden;
 }
-.sidebar__nav { display: flex; flex-direction: column; padding: 6px 0; }
+.sidebar__nav { display: flex; flex-direction: column; padding: 8px 0; }
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: 100%;
-  padding: 8px 14px;
+  height: 32px;
+  padding: 0 14px;
   background: none;
   border: none;
   border-left: 2px solid transparent;
   border-radius: 0;
   color: var(--text-dim);
   text-align: left;
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 400;
+  transition: background 0.12s, color 0.12s;
 }
-.nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.nav-item:hover { background: var(--bg-hover); color: var(--text); border-color: transparent; }
 .nav-item.active {
   background: var(--bg-selected);
   border-left-color: var(--accent);
   color: var(--text);
 }
-.nav-item__icon { display: flex; width: 15px; }
+.nav-item__icon { display: flex; width: 14px; color: var(--text-faint); }
+.nav-item.active .nav-item__icon { color: var(--text-dim); }
 
 .sidebar__spacer { flex: 1; }
 
 .sidebar__block {
   border-top: 1px solid var(--border-dim);
-  padding: 10px 14px;
+  padding: 12px 14px;
 }
-.sidebar__block-title { margin-bottom: 8px; }
+.sidebar__block-title { margin-bottom: 9px; }
 
-.community-list { display: flex; flex-direction: column; gap: 4px; }
+.community-list { display: flex; flex-direction: column; gap: 5px; }
 .community-row {
   display: flex; align-items: baseline; gap: 8px;
   font-size: 12px;
+  color: var(--text-dim);
 }
 .community-row__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.community-row__score { font-family: var(--font-mono); color: var(--text-data); font-size: 11px; }
+.community-row__score { font-family: var(--font-mono); color: var(--text-dim); font-size: 11px; }
 
-.status-block { display: flex; flex-direction: column; gap: 5px; }
-.status-row { display: flex; justify-content: space-between; font-size: 12px; }
-.status-row__k { color: var(--text-dim); }
-.status-row__v { font-family: var(--font-mono); color: var(--text-data); }
+.status-block { display: flex; flex-direction: column; gap: 6px; }
+.status-row {
+  display: flex; justify-content: space-between;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+.status-row__k { color: var(--text-faint); }
+.status-row__v { font-family: var(--font-mono); color: var(--text-dim); }
 .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
 
 /* ---- Main panel ---------------------------------------------------------- */
