@@ -13,16 +13,18 @@ export interface TypeInfo {
   color: string; // muted hex matching the new palette
 }
 
-const STEEL = "#9db8d2"; // default data-blue
+// Object-type palette — matches the --color-* CSS variables in index.css.
+// Literal hexes (not var()) so they also work as SVG presentation attributes.
+const STEEL = "#3d5080"; // --color-other
 const TYPE_TABLE: Record<string, TypeInfo> = {
-  Galaxy: { code: "Gx", label: "Galaxy", color: "#7fa8cc" },
-  Nebula: { code: "EN", label: "Emission nebula", color: "#6fa8a6" },
-  EmissionNebula: { code: "EN", label: "Emission nebula", color: "#6fa8a6" },
-  ReflectionNebula: { code: "RN", label: "Reflection nebula", color: "#8f9fc0" },
-  PlanetaryNebula: { code: "PN", label: "Planetary nebula", color: "#6fb0a0" },
-  GlCl: { code: "GlCl", label: "Globular cluster", color: "#c9c2b4" },
-  OpenCl: { code: "OpCl", label: "Open cluster", color: "#8a9cae" },
-  SNR: { code: "SNR", label: "Supernova remnant", color: "#b08070" },
+  Galaxy: { code: "Gx", label: "Galaxy", color: "#6b9fd4" }, // --color-galaxy
+  Nebula: { code: "EN", label: "Emission nebula", color: "#6bc4c4" }, // --color-nebula
+  EmissionNebula: { code: "EN", label: "Emission nebula", color: "#6bc4c4" },
+  ReflectionNebula: { code: "RN", label: "Reflection nebula", color: "#8aabad" }, // --color-cluster
+  PlanetaryNebula: { code: "PN", label: "Planetary nebula", color: "#6bc4c4" },
+  GlCl: { code: "GlCl", label: "Globular cluster", color: "#d4d4f0" }, // --color-globular
+  OpenCl: { code: "OpCl", label: "Open cluster", color: "#8aabad" }, // --color-cluster
+  SNR: { code: "SNR", label: "Supernova remnant", color: "#b08a8a" },
   Unknown: { code: "—", label: "Unknown", color: STEEL },
 };
 
@@ -46,9 +48,9 @@ export function seeingQuality(value: number): SeeingQuality {
 
 // Literal hex variants for SVG presentation attributes (var() doesn't resolve).
 export function seeingHex(value: number): string {
-  if (value < 1.5) return "#5a8a5a";
-  if (value <= 2.5) return "#7a7850";
-  return "#7a4a40";
+  if (value < 1.5) return "#4a9e6a"; // --good
+  if (value <= 2.5) return "#7a8e5a"; // --avg
+  return "#8e4a4a"; // --poor
 }
 
 // --- Coordinates ------------------------------------------------------------

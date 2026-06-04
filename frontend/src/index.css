@@ -1,76 +1,110 @@
 /* ==========================================================================
-   ZENITH — professional astronomy planning UI
-   Visual language: dense, authoritative, early-2000s observatory software
-   (Cartes du Ciel / TheSkyX / ESO archive). Muted warm-neutral dark theme,
-   1px borders not shadows, data tables not cards, monospace data.
+   ZENITH — mission-control astronomy planning UI
+   Visual language: deep navy, precise typography (Space Grotesk + Space Mono),
+   white accent used sparingly. ESO / NASA mission-control, not SaaS.
+   1px navy borders not shadows, data tables not cards, monospace data.
    ========================================================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap');
+
 :root {
-  --bg:          #0f1014;
-  --bg-panel:    #16191f;
-  --bg-row:      #1c2028;
-  --bg-hover:    #222730;
-  --bg-selected: #1a2435;
+  /* Navy backgrounds — deep, rich, not flat black */
+  --bg:          #080e1a;   /* deepest navy — main background */
+  --bg-panel:    #0d1526;   /* panel backgrounds */
+  --bg-row:      #111d33;   /* table rows */
+  --bg-hover:    #172240;   /* hover state */
+  --bg-selected: #1a2d52;   /* selected row */
+  --bg-elevated: #1e3460;   /* elevated surfaces, active states */
 
-  --text:        #d4cfc8;
-  --text-dim:    #7a7870;
-  --text-faint:  #4a4840;
-  --text-data:   #9db8d2;
+  /* Text — high contrast on navy */
+  --text:        #f0f4ff;   /* primary — cool white with slight blue cast */
+  --text-dim:    #8a9bc4;   /* secondary — muted periwinkle */
+  --text-faint:  #3d5080;   /* very muted — borders, grid lines */
+  --text-data:   #c8d8f0;   /* data values — steel blue-white, mono */
 
-  --accent:      #5b8db8;
-  --accent-dim:  #2a3f52;
-  --accent-text: #88b4d4;
+  /* Accent — clean white, used very sparingly */
+  --accent:      #ffffff;   /* pure white — primary accent */
+  --accent-dim:  #1e3460;   /* white accent background tint */
+  --accent-text: #e8f0ff;   /* slightly blue-tinted white for text */
 
-  --good:   #5a8a5a;
-  --avg:    #7a7850;
-  --poor:   #7a4a40;
-  --warn:   #7a6040;
+  /* Semantic colors — muted, not neon */
+  --good:   #4a9e6a;   /* muted green */
+  --avg:    #7a8e5a;   /* muted olive */
+  --poor:   #8e4a4a;   /* muted red */
+  --warn:   #8e7a4a;   /* muted amber */
 
-  --border:      #2a2d35;
-  --border-dim:  #1e2028;
-  --rule:        #252830;
+  /* Object type colors — subtle, fitting the navy palette */
+  --color-galaxy:   #6b9fd4;   /* steel blue */
+  --color-nebula:   #6bc4c4;   /* teal */
+  --color-globular: #d4d4f0;   /* lavender-white */
+  --color-cluster:  #8aabad;   /* steel */
+  --color-other:    #3d5080;   /* muted navy */
 
-  --font-ui:   'Inter', 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'SF Mono', 'Courier New', monospace;
-  --radius:    2px;
+  /* Borders — subtle navy separators */
+  --border:      #1e2f50;   /* panel borders */
+  --border-dim:  #152040;   /* inner separators */
+  --rule:        #182848;   /* horizontal rules */
+
+  /* Typography */
+  --font-ui:   'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-mono: 'Space Mono', 'JetBrains Mono', 'Fira Code', monospace;
+
+  --radius: 2px;
 
   /* fixed panel geometry */
-  --topbar-h:   36px;
-  --left-w:     200px;
+  --topbar-h:   40px;
+  --left-w:     188px;
   --right-w:    320px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html { font-size: 14px; }
 html, body, #root { height: 100%; }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.5;
+  font-weight: 400;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  min-height: 100vh;
 }
 
-::selection { background: var(--accent-dim); color: var(--text); }
+/* Subtle deep-space radial glow — very faint, doesn't distract */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%,
+      rgba(30, 60, 120, 0.25) 0%,
+      transparent 70%),
+    radial-gradient(ellipse 40% 30% at 80% 80%,
+      rgba(20, 40, 90, 0.15) 0%,
+      transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
 
-/* Scrollbars — thin, muted */
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #353945; }
+#root { position: relative; z-index: 1; }
 
-.mono { font-family: var(--font-mono); }
+/* Monospace for all data */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  letter-spacing: 0.02em;
+}
 .data { font-family: var(--font-mono); color: var(--text-data); }
 
-/* Small-caps section labels */
+/* Section labels */
 .label {
-  font-variant: small-caps;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--text-dim);
-  font-size: 12px;
 }
 
 /* uppercase micro-labels (table headers etc) */
@@ -83,43 +117,68 @@ body {
 
 a { color: var(--accent-text); text-decoration: none; }
 
-/* Generic form controls --------------------------------------------------- */
+/* Scrollbar styling — dark navy */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-panel); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
-input[type="text"],
-input[type="date"],
-input[type="number"],
-select {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-  outline: none;
+/* Selection */
+::selection { background: var(--bg-elevated); color: var(--text); }
+
+/* Focus rings */
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
 }
-input:focus, select:focus { border-color: var(--accent); }
-input::placeholder { color: var(--text-faint); }
 
-button {
+/* Input reset */
+input, select, button {
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text);
   background: var(--bg-row);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 6px 12px;
-  cursor: pointer;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.15s;
 }
-button:hover { background: var(--bg-hover); border-color: var(--border); }
+input:focus, select:focus {
+  border-color: rgba(255,255,255,0.4);
+}
+input::placeholder { color: var(--text-faint); }
+button {
+  cursor: pointer;
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  transition: background 0.15s, border-color 0.15s;
+}
+button:hover {
+  background: var(--bg-hover);
+  border-color: rgba(255,255,255,0.2);
+}
 button:disabled { opacity: 0.45; cursor: default; }
 
+/* Primary action button */
 button.primary {
-  background: var(--accent-dim);
+  background: var(--accent);
+  color: var(--bg);
   border-color: var(--accent);
-  color: var(--accent-text);
+  font-weight: 500;
+  letter-spacing: 0.04em;
 }
-button.primary:hover { background: #324b61; }
+button.primary:hover {
+  background: var(--accent-text);
+  border-color: var(--accent-text);
+}
+
+/* Horizontal rule */
+hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 12px 0;
+}
 
 /* ==========================================================================
    App shell — topbar + three-panel grid
@@ -554,7 +613,7 @@ button.primary:hover { background: #324b61; }
 .tdetail__img-src {
   position: absolute; bottom: 0; right: 0;
   font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
-  background: rgba(15,16,20,0.7); padding: 2px 5px;
+  background: rgba(8,14,26,0.8); padding: 2px 5px;
 }
 .tdetail__img-ph {
   margin: 12px 14px; height: 140px;
@@ -725,7 +784,7 @@ button.primary:hover { background: #324b61; }
 .cal-cell--avg, .cal-cell--good, .cal-cell--best { cursor: pointer; }
 .cal-cell--good { background: var(--accent-dim); }
 .cal-cell--good .cal-cell__day { color: var(--accent-text); }
-.cal-cell--best { background: #34506b; }
+.cal-cell--best { background: var(--bg-elevated); }
 .cal-cell--best .cal-cell__day { color: var(--accent-text); }
 .cal-cell--none, .cal-cell--poor { cursor: pointer; }
 .cal-cell:hover { outline: 1px solid var(--accent); outline-offset: -1px; z-index: 1; }
