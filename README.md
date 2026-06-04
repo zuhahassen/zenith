@@ -343,7 +343,7 @@ zenith/
 | Edge (Workers/Pages/KV/D1)    | Deployed    | Proxy, cache, rating/history storage                         |
 | Reference imagery (MAST)      | Implemented | HLA HST cutout with SkyView DSS2 fallback, LRU-cached        |
 | Smoke test                    | Implemented | `scripts/smoke_test.py` covers every endpoint, CI exit codes |
-| Multi-night target calendar   | Implemented | KV-cached forward scan of observability, quality-coded cells, deep-linked from a target |
+| Multi-night target calendar   | Implemented | KV-cached forward scan, quality-coded cells, deep-linked from a target, one-click `.ics` export of observable nights |
 
 ## References
 - Ni, B., Jia, P., et al. (2022). *Data-driven seeing prediction for the LAMOST telescope.* MNRAS. — The 24-feature vector, trailing weather windows, and tree-model approach in `api/ml/features.py` and `api/pipeline/seeing.py`.

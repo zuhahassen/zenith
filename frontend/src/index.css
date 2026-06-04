@@ -854,10 +854,25 @@ hr {
   background: var(--bg-panel);
   padding: 12px 16px;
 }
+.cal__target-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
 .cal__target-name {
   font-family: var(--font-heading); font-weight: 500; font-size: 20px;
   color: var(--text); display: flex; align-items: baseline; gap: 9px;
 }
+.cal__export {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center;
+  font-size: 12px; padding: 5px 11px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--text);
+}
+.cal__export:hover:not(:disabled) {
+  background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.4);
+}
+.cal__export:disabled { opacity: 0.4; cursor: default; }
 .cal__target-type { font-family: var(--font-mono); font-size: 12px; }
 .cal__target-mag { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
 .cal__best { margin-top: 8px; color: var(--text-dim); font-size: 12px; font-family: var(--font-mono); }

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CalendarPlus } from "lucide-react";
 import { useCalendar } from "../hooks/useCalendar";
 import { hhmm, tzLabel, typeInfo } from "../lib/format";
+import { buildObservingICS, downloadICS } from "../lib/ics";
 import type { ZenithSettings } from "../lib/settings";
 import type { CalendarNight, CalendarResponse } from "../types/zenith";
 
@@ -123,16 +125,43 @@ function CalendarResult({
 
   const [pinned, setPinned] = useState<string | null>(null);
 
+  const observableCount = useMemo(
+    () => nights.filter((n) => n.observable && n.window_start && n.window_end).length,
+    [nights],
+  );
+
+  function exportICS() {
+    const ics = buildObservingICS(data, settings.locationLabel || "Observing site");
+    if (!ics) return;
+    const slug = target.name.replace(/\s+/g, "-").toLowerCase();
+    downloadICS(`zenith-${slug}.ics`, ics);
+  }
+
   return (
     <>
       <div className="cal__target-card">
-        <div className="cal__target-name">
-          {target.name}
-          {target.common_name ? ` · ${target.common_name}` : ""}
-          <span className="cal__target-type" style={{ color: info.color }}>
-            {info.code}
-          </span>
-          {target.magnitude != null && <span className="cal__target-mag">Mag {target.magnitude.toFixed(1)}</span>}
+        <div className="cal__target-head">
+          <div className="cal__target-name">
+            {target.name}
+            {target.common_name ? ` · ${target.common_name}` : ""}
+            <span className="cal__target-type" style={{ color: info.color }}>
+              {info.code}
+            </span>
+            {target.magnitude != null && <span className="cal__target-mag">Mag {target.magnitude.toFixed(1)}</span>}
+          </div>
+          <button
+            className="cal__export"
+            onClick={exportICS}
+            disabled={observableCount === 0}
+            title={
+              observableCount === 0
+                ? "No observable nights to export"
+                : `Export ${observableCount} observable night${observableCount === 1 ? "" : "s"} to your calendar (.ics)`
+            }
+          >
+            <CalendarPlus size={13} style={{ verticalAlign: "middle", marginRight: 6 }} />
+            Export to calendar
+          </button>
         </div>
         {bestMonths.length > 0 && (
           <div className="cal__best">
