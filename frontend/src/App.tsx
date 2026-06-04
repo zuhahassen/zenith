@@ -63,16 +63,13 @@ export default function App() {
   const userEmail = useMemo(() => getUserEmail(), [authTick]);
   const [authStatus, setAuthStatus] = useState<string | null>(null);
 
-  // Landing hero — shown once per browser session, but never on the magic-link
+  // Landing hero — shown on every page load, but never on the magic-link
   // verification landing (/auth/verify) so sign-in completes uninterrupted.
   const [showLanding, setShowLanding] = useState(
-    () =>
-      window.location.pathname !== "/auth/verify" &&
-      sessionStorage.getItem("zenith_seen_landing") !== "1",
+    () => window.location.pathname !== "/auth/verify",
   );
 
   function enterApp() {
-    sessionStorage.setItem("zenith_seen_landing", "1");
     setShowLanding(false);
   }
 
