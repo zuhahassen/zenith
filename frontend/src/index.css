@@ -1,19 +1,19 @@
 /* ==========================================================================
    ZENITH — mission-control astronomy planning UI
-   Visual language: deep navy, editorial typography (Newsreader serif headings,
-   Inter body, Space Mono data). ESO / NASA mission-control, not SaaS.
-   1px navy borders not shadows, data tables not cards, monospace data.
+   Visual language: warm charcoal, editorial typography (Newsreader serif
+   headings, Inter body, Space Mono data). ESO / NASA mission-control, not SaaS.
+   1px charcoal borders not shadows, data tables not cards, monospace data.
    Fonts (Inter + Newsreader + Space Mono) are bundled via @fontsource in main.tsx.
    ========================================================================== */
 
 :root {
-  /* Navy backgrounds — deep, rich, not flat black */
-  --bg:          #080e1a;   /* deepest navy — main background */
-  --bg-panel:    #0d1526;   /* panel backgrounds */
-  --bg-row:      #111d33;   /* table rows */
-  --bg-hover:    #172240;   /* hover state */
-  --bg-selected: #1a2d52;   /* selected row */
-  --bg-elevated: #1e3460;   /* elevated surfaces, active states */
+  /* Charcoal backgrounds — warm dark, not navy (matches 68eb0be6 deploy) */
+  --bg:          #0f1014;   /* deepest charcoal — main background */
+  --bg-panel:    #16191f;   /* panel backgrounds */
+  --bg-row:      #1c2028;   /* table rows */
+  --bg-hover:    #222730;   /* hover state */
+  --bg-selected: #1a2435;   /* selected row */
+  --bg-elevated: #283041;   /* elevated surfaces, active states */
 
   /* Text — high contrast on navy */
   --text:        #f0f4ff;   /* primary — cool white with slight blue cast */
@@ -39,10 +39,10 @@
   --color-cluster:  #8aabad;   /* steel */
   --color-other:    #3d5080;   /* muted navy */
 
-  /* Borders — subtle navy separators */
-  --border:      #1e2f50;   /* panel borders */
-  --border-dim:  #152040;   /* inner separators */
-  --rule:        #182848;   /* horizontal rules */
+  /* Borders — subtle charcoal separators (matches 68eb0be6 deploy) */
+  --border:      #2a2d35;   /* panel borders */
+  --border-dim:  #1e2028;   /* inner separators */
+  --rule:        #252830;   /* horizontal rules */
 
   /* Typography — editorial serif headings over a clean humanist sans body */
   --font-ui:      'Inter', system-ui, -apple-system, sans-serif;
