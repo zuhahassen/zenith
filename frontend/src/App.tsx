@@ -29,6 +29,15 @@ const CalendarView = lazy(() =>
 );
 const QAPanel = lazy(() => import("./components/QAPanel").then((m) => ({ default: m.QAPanel })));
 
+// Human labels for the current view, shown in the mission-control top bar.
+const VIEW_LABELS: Record<View, string> = {
+  tonight: "Tonight",
+  compare: "Compare Sites",
+  calendar: "Calendar",
+  history: "History",
+  settings: "Settings",
+};
+
 export default function App() {
   const plan = usePlan();
   const [settings, setSettings] = useState<ZenithSettings>(() => loadSettings());
@@ -188,21 +197,25 @@ export default function App() {
 
   const showRightPanel = Boolean(data);
   const locLabel = settings.locationLabel || (data ? `${data.request.lat.toFixed(2)}, ${data.request.lon.toFixed(2)}` : "");
+  const viewName = VIEW_LABELS[view];
+  const centerLabel = [locLabel, viewName].filter(Boolean).join(" · ");
 
   return (
     <div className="app">
       <header className="topbar">
-        <span className="topbar__brand">Zenith</span>
-        <span className="topbar__sep">·</span>
-        <span className="topbar__sub">Observation Planner</span>
-        <span className="topbar__spacer" />
-        {authStatus && <span className="topbar__authstatus">{authStatus}</span>}
-        {locLabel && <span className="topbar__loc">{locLabel}</span>}
-        <AuthPanel
-          signedIn={signedIn}
-          email={userEmail}
-          onChange={() => setAuthTick((t) => t + 1)}
-        />
+        <div className="topbar__left">
+          <span className="topbar__glyph">✦</span>
+          <span className="topbar__brand">ZENITH</span>
+        </div>
+        <div className="topbar__center">{centerLabel}</div>
+        <div className="topbar__right">
+          {authStatus && <span className="topbar__authstatus">{authStatus}</span>}
+          <AuthPanel
+            signedIn={signedIn}
+            email={userEmail}
+            onChange={() => setAuthTick((t) => t + 1)}
+          />
+        </div>
       </header>
 
       <div className={`layout ${showRightPanel ? "" : "layout--setup"}`}>
