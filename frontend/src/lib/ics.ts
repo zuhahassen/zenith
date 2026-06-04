@@ -2,7 +2,9 @@
 // Produces one VEVENT per observable night spanning the target's observing
 // window, importable into Google Calendar, Apple Calendar, Outlook, etc.
 
-import type { CalendarResponse } from "../types/zenith";
+import type { CalendarNight, CalendarResponse } from "../types/zenith";
+
+export type ICSZone = "utc" | "local";
 
 // RFC 5545 text escaping: backslash, semicolon, comma, and newlines.
 function escapeText(value: string): string {
@@ -13,13 +15,22 @@ function escapeText(value: string): string {
     .replace(/\r?\n/g, "\\n");
 }
 
-// ISO timestamp -> UTC iCalendar form "YYYYMMDDTHHMMSSZ".
-function toICSDate(iso: string): string {
+const pad = (n: number) => String(n).padStart(2, "0");
+
+// ISO timestamp -> iCalendar datetime. In "utc" mode this is the absolute
+// "YYYYMMDDTHHMMSSZ" form; in "local" mode it's a floating local wall-clock
+// time (no Z), which calendar clients interpret in the viewer's own zone.
+function toICSDate(iso: string, zone: ICSZone): string {
   const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
+  if (zone === "local") {
+    return (
+      `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
+      `T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+    );
+  }
   return (
-    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
-    `T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
+    `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
   );
 }
 
@@ -45,6 +56,7 @@ function foldLine(line: string): string {
 export function buildObservingICS(
   data: CalendarResponse,
   siteLabel: string,
+  zone: ICSZone = "utc",
 ): string | null {
   const { target, nights } = data;
   const observable = nights.filter(
@@ -55,7 +67,7 @@ export function buildObservingICS(
   const title = target.common_name
     ? `${target.name} (${target.common_name})`
     : target.name;
-  const stamp = toICSDate(new Date().toISOString());
+  const stamp = toICSDate(new Date().toISOString(), "utc");
 
   const lines: string[] = [
     "BEGIN:VCALENDAR",
@@ -84,8 +96,8 @@ export function buildObservingICS(
       "BEGIN:VEVENT",
       `UID:${escapeText(`${target.name}-${n.date}`)}@zenith`,
       `DTSTAMP:${stamp}`,
-      `DTSTART:${toICSDate(n.window_start as string)}`,
-      `DTEND:${toICSDate(n.window_end as string)}`,
+      `DTSTART:${toICSDate(n.window_start as string, zone)}`,
+      `DTEND:${toICSDate(n.window_end as string, zone)}`,
       `SUMMARY:${escapeText(`Observe ${title}`)}`,
       `DESCRIPTION:${escapeText(descParts.join("\n"))}`,
       `LOCATION:${escapeText(siteLabel)}`,
@@ -99,8 +111,70 @@ export function buildObservingICS(
 
 function toClock(iso: string): string {
   const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
+/**
+ * Build a one-click "Add to Google Calendar" template URL for a single night.
+ * Google reads the absolute UTC times (…Z) and renders them in the user's zone.
+ */
+export function googleCalendarUrl(
+  night: CalendarNight,
+  title: string,
+  siteLabel: string,
+): string | null {
+  if (!night.window_start || !night.window_end) return null;
+  const dates = `${toICSDate(night.window_start, "utc")}/${toICSDate(night.window_end, "utc")}`;
+  const details: string[] = [];
+  if (night.peak_alt_deg != null) {
+    details.push(
+      `Peak altitude ${night.peak_alt_deg.toFixed(0)}°` +
+        (night.peak_time ? ` at ${toClock(night.peak_time)} UTC` : ""),
+    );
+  }
+  if (night.predicted_seeing != null) details.push(`Seeing ~${night.predicted_seeing.toFixed(1)}″`);
+  details.push(`Moon ${Math.round(night.moon_illumination * 100)}% illuminated`);
+  if (night.quality_score != null) details.push(`Quality score ${night.quality_score.toFixed(2)}`);
+  details.push("Planned with Zenith.");
+
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `Observe ${title}`,
+    dates,
+    details: details.join("\n"),
+    location: siteLabel,
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+/**
+ * Build a subscribable webcal:// URL pointing at the backend .ics feed. Calendar
+ * apps poll this for a live-updating calendar. `apiBase` is the absolute API
+ * origin (e.g. the Worker URL); falls back to the current page origin.
+ */
+export function webcalFeedUrl(
+  apiBase: string,
+  params: {
+    lat: number;
+    lon: number;
+    target: string;
+    start: string;
+    end: string;
+    aperture_mm: number;
+    site: string;
+  },
+): string {
+  const base = (apiBase || window.location.origin).replace(/^https?:\/\//, "");
+  const qs = new URLSearchParams({
+    lat: String(params.lat),
+    lon: String(params.lon),
+    target: params.target,
+    start: params.start,
+    end: params.end,
+    aperture_mm: String(params.aperture_mm),
+    site: params.site,
+  });
+  return `webcal://${base}/api/calendar.ics?${qs.toString()}`;
 }
 
 // Trigger a browser download of an .ics file.

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarPlus } from "lucide-react";
+import { CalendarPlus, Rss } from "lucide-react";
 import { useCalendar } from "../hooks/useCalendar";
 import { hhmm, tzLabel, typeInfo } from "../lib/format";
-import { buildObservingICS, downloadICS } from "../lib/ics";
+import { buildObservingICS, downloadICS, googleCalendarUrl, webcalFeedUrl } from "../lib/ics";
 import type { ZenithSettings } from "../lib/settings";
 import type { CalendarNight, CalendarResponse } from "../types/zenith";
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = [
@@ -122,8 +124,11 @@ function CalendarResult({
   const months = useMemo(() => groupMonths(nights), [nights]);
   const bestMonths = useMemo(() => topMonths(nights), [nights]);
   const siteLabel = settings.locationLabel || "this site";
+  const feedSite = settings.locationLabel || "Observing site";
 
   const [pinned, setPinned] = useState<string | null>(null);
+
+  const title = target.common_name ? `${target.name} (${target.common_name})` : target.name;
 
   const observableCount = useMemo(
     () => nights.filter((n) => n.observable && n.window_start && n.window_end).length,
@@ -131,10 +136,24 @@ function CalendarResult({
   );
 
   function exportICS() {
-    const ics = buildObservingICS(data, settings.locationLabel || "Observing site");
+    const ics = buildObservingICS(data, feedSite, settings.timezone);
     if (!ics) return;
     const slug = target.name.replace(/\s+/g, "-").toLowerCase();
     downloadICS(`zenith-${slug}.ics`, ics);
+  }
+
+  function subscribe() {
+    if (settings.lat == null || settings.lon == null || nights.length === 0) return;
+    const url = webcalFeedUrl(API_BASE, {
+      lat: settings.lat,
+      lon: settings.lon,
+      target: target.name,
+      start: nights[0].date,
+      end: nights[nights.length - 1].date,
+      aperture_mm: settings.aperture_mm,
+      site: feedSite,
+    });
+    window.location.href = url;
   }
 
   return (
@@ -149,19 +168,30 @@ function CalendarResult({
             </span>
             {target.magnitude != null && <span className="cal__target-mag">Mag {target.magnitude.toFixed(1)}</span>}
           </div>
-          <button
-            className="cal__export"
-            onClick={exportICS}
-            disabled={observableCount === 0}
-            title={
-              observableCount === 0
-                ? "No observable nights to export"
-                : `Export ${observableCount} observable night${observableCount === 1 ? "" : "s"} to your calendar (.ics)`
-            }
-          >
-            <CalendarPlus size={13} style={{ verticalAlign: "middle", marginRight: 6 }} />
-            Export to calendar
-          </button>
+          <div className="cal__export-row">
+            <button
+              className="cal__export"
+              onClick={subscribe}
+              disabled={observableCount === 0 || settings.lat == null}
+              title="Subscribe to a live-updating calendar feed (webcal). Opens in your calendar app."
+            >
+              <Rss size={13} style={{ verticalAlign: "middle", marginRight: 6 }} />
+              Subscribe
+            </button>
+            <button
+              className="cal__export"
+              onClick={exportICS}
+              disabled={observableCount === 0}
+              title={
+                observableCount === 0
+                  ? "No observable nights to export"
+                  : `Export ${observableCount} observable night${observableCount === 1 ? "" : "s"} to your calendar (.ics)`
+              }
+            >
+              <CalendarPlus size={13} style={{ verticalAlign: "middle", marginRight: 6 }} />
+              Export .ics
+            </button>
+          </div>
         </div>
         {bestMonths.length > 0 && (
           <div className="cal__best">
@@ -181,6 +211,8 @@ function CalendarResult({
             pinned={pinned}
             onPin={setPinned}
             targetName={target.name}
+            title={title}
+            siteLabel={feedSite}
             onPlanNight={onPlanNight}
           />
         ))}
@@ -196,6 +228,8 @@ function MonthGrid({
   pinned,
   onPin,
   targetName,
+  title,
+  siteLabel,
   onPlanNight,
 }: {
   year: number;
@@ -204,6 +238,8 @@ function MonthGrid({
   pinned: string | null;
   onPin: (d: string | null) => void;
   targetName: string;
+  title: string;
+  siteLabel: string;
   onPlanNight: (targetName: string, dateISO: string) => void;
 }) {
   const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -238,6 +274,8 @@ function MonthGrid({
               pinned={pinned === iso}
               onPin={onPin}
               targetName={targetName}
+              title={title}
+              siteLabel={siteLabel}
               onPlanNight={onPlanNight}
             />
           );
@@ -254,6 +292,8 @@ function DayCell({
   pinned,
   onPin,
   targetName,
+  title,
+  siteLabel,
   onPlanNight,
 }: {
   iso: string;
@@ -262,6 +302,8 @@ function DayCell({
   pinned: boolean;
   onPin: (d: string | null) => void;
   targetName: string;
+  title: string;
+  siteLabel: string;
   onPlanNight: (targetName: string, dateISO: string) => void;
 }) {
   const [hover, setHover] = useState(false);
@@ -286,6 +328,8 @@ function DayCell({
           night={night}
           pinned={pinned}
           targetName={targetName}
+          title={title}
+          siteLabel={siteLabel}
           onPlanNight={onPlanNight}
         />
       )}
@@ -298,16 +342,21 @@ function CellPopover({
   night,
   pinned,
   targetName,
+  title,
+  siteLabel,
   onPlanNight,
 }: {
   iso: string;
   night: CalendarNight;
   pinned: boolean;
   targetName: string;
+  title: string;
+  siteLabel: string;
   onPlanNight: (targetName: string, dateISO: string) => void;
 }) {
   const label = dateLabel(iso);
   const isPast = iso < todayISO();
+  const gcalUrl = night.observable ? googleCalendarUrl(night, title, siteLabel) : null;
   return (
     <div className="cal-pop" onClick={(e) => e.stopPropagation()}>
       <div className="cal-pop__hdr">
@@ -339,9 +388,22 @@ function CellPopover({
           {isPast ? (
             <span className="cal-pop__past">Past session</span>
           ) : (
-            <button className="cal-pop__plan" onClick={() => onPlanNight(targetName, iso)}>
-              Plan this night
-            </button>
+            <>
+              <button className="cal-pop__plan" onClick={() => onPlanNight(targetName, iso)}>
+                Plan this night
+              </button>
+              {gcalUrl && (
+                <a
+                  className="cal-pop__gcal"
+                  href={gcalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Add to Google Calendar
+                </a>
+              )}
+            </>
           )}
         </div>
       )}

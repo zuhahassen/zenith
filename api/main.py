@@ -43,6 +43,7 @@ from .agent.planner import SessionPlanner
 from .integrations.mast import MASTClient
 from .integrations.weather import fetch_nightly_forecast, fetch_weather
 from .pipeline.calendar import build_calendar
+from .pipeline.ics import build_ics
 from .pipeline.catalog import (
     NAMED_CATALOGS,
     SEED_CATALOG,
@@ -613,6 +614,72 @@ async def get_target_calendar(body: CalendarRequest, response: Response) -> dict
         },
         "nights": nights,
     }
+
+
+@app.get("/api/calendar.ics")
+async def get_target_calendar_feed(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    target: str = Query(..., description="SIMBAD/common name, e.g. 'M 42'"),
+    start: Optional[str] = Query(None, description="YYYY-MM-DD; defaults to today"),
+    end: Optional[str] = Query(None, description="YYYY-MM-DD; defaults to start + 90d"),
+    aperture_mm: float = Query(150.0, gt=0),
+    min_alt_deg: float = Query(20.0, ge=0, le=90),
+    site: str = Query("Observing site"),
+) -> Response:
+    """Subscribable iCalendar feed of a target's observable nights.
+
+    GET so calendar clients (Google/Apple/Outlook ``webcal://``) can poll it.
+    Returns ``text/calendar``; one VEVENT per observable night in the range.
+    """
+    today = datetime.now(tz=timezone.utc).date()
+    try:
+        start_date = date_cls.fromisoformat(start) if start else today
+        end_date = date_cls.fromisoformat(end) if end else start_date + timedelta(days=90)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="start/end must be YYYY-MM-DD")
+
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="end must be on or after start")
+    span_nights = (end_date - start_date).days + 1
+    if span_nights > _CALENDAR_MAX_NIGHTS:
+        end_date = start_date + timedelta(days=_CALENDAR_MAX_NIGHTS - 1)
+
+    resolved = resolve_target(target)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Target not found: {target}")
+
+    try:
+        seeing_by_date = await _calendar_seeing_by_date(lat, lon, start_date, end_date)
+    except Exception:
+        logger.exception("calendar.ics seeing conditioning failed; continuing without it")
+        seeing_by_date = {}
+
+    nights = await build_calendar(
+        lat=lat,
+        lon=lon,
+        ra_deg=float(resolved["ra"]),
+        dec_deg=float(resolved["dec"]),
+        start_date=start_date,
+        end_date=end_date,
+        min_alt_deg=min_alt_deg,
+        seeing_by_date=seeing_by_date,
+    )
+
+    target_meta = {
+        "name": resolved.get("name") or target,
+        "common_name": resolved.get("common_name"),
+    }
+    body = build_ics(target_meta, nights, site)
+    filename = (resolved.get("name") or target).replace(" ", "-").lower()
+    return Response(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'inline; filename="zenith-{filename}.ics"',
+            "Cache-Control": "public, max-age=21600",
+        },
+    )
 
 
 async def _calendar_seeing_by_date(

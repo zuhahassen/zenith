@@ -118,7 +118,8 @@ constant so the pipeline degrades gracefully.
   sees in the eyepiece) per target; `/api/explain` answers follow-up questions;
   `/api/compare-sites` scores 2–5 candidate sites for the same night on a
   transparent weighted composite; `/api/calendar` forward-scans a single
-  target's observability across a date range for the multi-night calendar;
+  target's observability across a date range for the multi-night calendar, and
+  `/api/calendar.ics` serves the same data as a subscribable iCalendar feed;
   `/api/feedback`, `/api/community-favorites`, and `/api/history` persist and
   surface per-user ratings, crowd-sourced target quality, and past sessions
   through the Worker's D1 store.
@@ -291,8 +292,8 @@ wrangler pages deploy dist --project-name=zenith
 ```
 zenith/
 ├── api/
-│   ├── main.py              # /api/plan, /api/plan-ai, /api/explain,
-│   │                        #   /api/compare-sites, /api/calendar, /api/health
+│   ├── main.py              # /api/plan, /api/plan-ai, /api/explain, /api/compare-sites,
+│   │                        #   /api/calendar, /api/calendar.ics, /api/health
 │   ├── agent/               # narrative ordering + Q&A layer (optional)
 │   ├── pipeline/
 │   │   ├── visibility.py    # twilight, transit, altitude, moon math
@@ -343,7 +344,8 @@ zenith/
 | Edge (Workers/Pages/KV/D1)    | Deployed    | Proxy, cache, rating/history storage                         |
 | Reference imagery (MAST)      | Implemented | HLA HST cutout with SkyView DSS2 fallback, LRU-cached        |
 | Smoke test                    | Implemented | `scripts/smoke_test.py` covers every endpoint, CI exit codes |
-| Multi-night target calendar   | Implemented | KV-cached forward scan, quality-coded cells, deep-linked from a target, one-click `.ics` export of observable nights |
+| Multi-night target calendar   | Implemented | KV-cached forward scan, quality-coded cells, deep-linked from a target |
+| Calendar export / subscribe   | Implemented | `.ics` download (UTC or local tz), subscribable `webcal://` feed (`/api/calendar.ics`), per-night Add-to-Google-Calendar link |
 
 ## References
 - Ni, B., Jia, P., et al. (2022). *Data-driven seeing prediction for the LAMOST telescope.* MNRAS. — The 24-feature vector, trailing weather windows, and tree-model approach in `api/ml/features.py` and `api/pipeline/seeing.py`.
