@@ -5,21 +5,25 @@ interface Props {
   onEnter: () => void;
 }
 
-const ALADIN_SRC = "https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js";
+const ALADIN_JS = "https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js";
+const ALADIN_CSS = "https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.min.css";
 
-// Iconic deep-sky waypoints [RA, Dec] in degrees, used to slowly pan the
-// ambient sky background across familiar showpieces.
-const SKY_TOUR: Array<[number, number]> = [
-  [83.82, -5.39], // M42 Orion Nebula
-  [56.75, 24.12], // M45 Pleiades
-  [10.68, 41.27], // M31 Andromeda
-  [250.42, 36.46], // M13 Hercules Cluster
-  [270.9, -24.38], // M8 Lagoon Nebula
-  [161.26, -59.68], // Eta Carinae
-];
+// Galactic centre (RA, Dec, degrees) — used when geolocation is unavailable.
+const MILKY_WAY_CORE: [number, number] = [266.4, -29.0];
 
-/** Inject the Aladin Lite script once and resolve when its global is ready. */
+/** Ensure the Aladin Lite stylesheet is present (required for correct rendering). */
+function ensureAladinCss() {
+  if (document.getElementById("aladin-lite-css")) return;
+  const link = document.createElement("link");
+  link.id = "aladin-lite-css";
+  link.rel = "stylesheet";
+  link.href = ALADIN_CSS;
+  document.head.appendChild(link);
+}
+
+/** Inject the Aladin Lite script + CSS once and resolve when its global is ready. */
 function loadAladin(): Promise<any> {
+  ensureAladinCss();
   const w = window as any;
   if (w.A) return Promise.resolve(w.A);
   return new Promise((resolve, reject) => {
@@ -31,7 +35,7 @@ function loadAladin(): Promise<any> {
     }
     const s = document.createElement("script");
     s.id = "aladin-lite-script";
-    s.src = ALADIN_SRC;
+    s.src = ALADIN_JS;
     s.charset = "utf-8";
     s.onload = () => resolve(w.A);
     s.onerror = reject;
@@ -39,20 +43,20 @@ function loadAladin(): Promise<any> {
   });
 }
 
-interface Star {
-  x: number;
-  y: number;
-  r: number;
-  base: number; // base brightness 0..1
-  tw: number; // twinkle speed
-  ph: number; // twinkle phase
-  hue: number; // subtle colour cast
+/** RA/Dec (degrees) pointing at the observer's local zenith, from sidereal time. */
+function zenithRaDec(lat: number, lon: number): [number, number] {
+  const now = new Date();
+  const utcH = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
+  const J2000 = Date.now() / 86400000 - 10957.5;
+  const GST = (6.697375 + 0.0657098242 * J2000 + utcH * 1.00273791) % 24;
+  const LST = (((GST + lon / 15) % 24) + 24) % 24; // local sidereal time, hours
+  return [LST * 15, lat];
 }
 
 /**
- * Minimal landing shown once per session: a realistic Stellarium-style night
- * sky rendered on a canvas (varied star magnitudes, a faint Milky Way band,
- * gentle twinkle) behind a large serif wordmark. Dismissed by swiping up,
+ * Landing shown on every load: a live Aladin Lite photographic sky pointed at
+ * the observer's zenith (via geolocation + sidereal time), drifting slowly for
+ * an ambient feel, behind a large serif wordmark. Dismissed by swiping up,
  * scrolling, a tap, or a key press, which slides the panel away to reveal the
  * planner.
  */
@@ -60,36 +64,39 @@ export function LandingHero({ onEnter }: Props) {
   const [exiting, setExiting] = useState(false);
   const touchStartY = useRef<number | null>(null);
   const dismissed = useRef(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // True only once Aladin has actually initialised, so we can fade the live sky
-  // in over the always-present canvas starfield (never a blank screen).
+  // Fade the live sky in once Aladin has initialised (avoids a flash of empty).
   const [aladinReady, setAladinReady] = useState(false);
+  const [locationLabel, setLocationLabel] = useState("Locating sky…");
 
-  // On phones or low-core devices the live Aladin survey is too heavy, so we
-  // skip it entirely and let the lightweight canvas starfield carry the scene.
-  const [lowPower] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      (window.matchMedia("(max-width: 640px)").matches ||
-        (navigator.hardwareConcurrency || 8) < 4),
-  );
-
-  // Aladin Lite live sky background (capable devices). Loads the script, inits
-  // a chrome-less photographic survey, then slowly pans across showpiece DSOs.
+  // Live Aladin Lite sky background. Loads the script + CSS, inits a chrome-less
+  // photographic survey, points at the user's zenith, and drifts gently.
   useEffect(() => {
-    if (lowPower) return;
     let cancelled = false;
     let aladin: any;
+    let drift = 0;
     let timer = 0;
+
+    const startDrift = (ra: number, dec: number, step: number) => {
+      timer = window.setInterval(() => {
+        if (!aladin) return;
+        drift += step;
+        try {
+          aladin.gotoRaDec(ra + drift, dec);
+        } catch {
+          /* ignore */
+        }
+      }, 100);
+    };
+
     loadAladin()
       .then((A) => {
         if (cancelled || !A) return;
         A.init.then(() => {
           if (cancelled) return;
-          aladin = A.aladin("#landing-aladin", {
+          aladin = A.aladin("#aladin-bg", {
             survey: "P/DSS2/color",
-            target: "M 42",
-            fov: 60,
+            target: "M 13",
+            fov: 120,
             showReticle: false,
             showZoomControl: false,
             showFullscreenControl: false,
@@ -100,121 +107,62 @@ export function LandingHero({ onEnter }: Props) {
             showFrame: false,
             showContextMenu: false,
             cooFrame: "equatorial",
-            backgroundColor: "#04060e",
+            backgroundColor: "#080c14",
+            projection: "SIN",
           });
           setAladinReady(true);
-          let i = 0;
-          timer = window.setInterval(() => {
-            i = (i + 1) % SKY_TOUR.length;
-            const [ra, dec] = SKY_TOUR[i];
+
+          const useFallback = () => {
+            if (cancelled) return;
             try {
-              aladin.animateToRaDec(ra, dec, 16);
+              aladin.gotoRaDec(...MILKY_WAY_CORE);
             } catch {
-              /* ignore animation hiccups */
+              /* ignore */
             }
-          }, 22000);
+            startDrift(MILKY_WAY_CORE[0], MILKY_WAY_CORE[1], 0.003);
+            setLocationLabel("Live sky · Milky Way core");
+          };
+
+          if (!navigator.geolocation) {
+            useFallback();
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (cancelled) return;
+              const { latitude: lat, longitude: lon } = pos.coords;
+              const [ra, dec] = zenithRaDec(lat, lon);
+              try {
+                aladin.gotoRaDec(ra, dec);
+                aladin.setFov(110);
+              } catch {
+                /* ignore */
+              }
+              startDrift(ra, dec, 0.004);
+              fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`)
+                .then((r) => r.json())
+                .then((d) => {
+                  if (cancelled) return;
+                  const a = d.address ?? {};
+                  const city = a.city || a.town || a.village || a.county || "your location";
+                  const time = new Date().toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  setLocationLabel(`Live sky · ${city} · ${time}`);
+                })
+                .catch(() => setLocationLabel("Live sky · your location"));
+            },
+            useFallback,
+            { timeout: 8000 },
+          );
         });
       })
-      .catch(() => {
-        /* network/embedding failure: the gradient sky carries the scene */
-      });
+      .catch(() => setLocationLabel("Night sky"));
+
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-    };
-  }, [lowPower]);
-
-  // Realistic starfield base layer: many faint stars, a few bright ones, plus a
-  // diagonal Milky Way band. Always drawn so the landing is never blank; the
-  // Aladin survey fades in on top of it when/if it initialises.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let stars: Star[] = [];
-    let w = 0;
-    let h = 0;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    const build = () => {
-      w = canvas.clientWidth;
-      h = canvas.clientHeight;
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      const count = Math.round((w * h) / 1600);
-      stars = [];
-      for (let i = 0; i < count; i++) {
-        const bright = Math.random();
-        // Skew toward faint stars; a handful are bright with a glow.
-        const mag = Math.pow(bright, 3);
-        stars.push({
-          x: Math.random() * w,
-          y: Math.random() * h,
-          r: 0.3 + mag * 1.7,
-          base: 0.25 + mag * 0.75,
-          tw: 0.4 + Math.random() * 1.6,
-          ph: Math.random() * Math.PI * 2,
-          hue: 200 + Math.random() * 60, // bluish-white
-        });
-      }
-
-      // Milky Way band: a diagonal strip of extra faint stars.
-      const bandCount = Math.round((w * h) / 5000);
-      const angle = -0.5;
-      for (let i = 0; i < bandCount; i++) {
-        const t = Math.random();
-        const along = t * Math.hypot(w, h);
-        const spread = (Math.random() - 0.5) * h * 0.42;
-        const cx = w * 0.5 + Math.cos(angle) * (along - Math.hypot(w, h) / 2);
-        const cy = h * 0.5 + Math.sin(angle) * (along - Math.hypot(w, h) / 2) + spread;
-        if (cx < 0 || cx > w || cy < 0 || cy > h) continue;
-        stars.push({
-          x: cx,
-          y: cy,
-          r: 0.25 + Math.random() * 0.6,
-          base: 0.12 + Math.random() * 0.3,
-          tw: 0.3 + Math.random() * 1.2,
-          ph: Math.random() * Math.PI * 2,
-          hue: 210 + Math.random() * 50,
-        });
-      }
-    };
-
-    let raf = 0;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const draw = (t: number) => {
-      ctx.clearRect(0, 0, w, h);
-      for (const s of stars) {
-        const tw = reduce ? 1 : 0.75 + 0.25 * Math.sin(t * 0.001 * s.tw + s.ph);
-        const a = Math.min(1, s.base * tw);
-        if (s.r > 1.2) {
-          const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 4);
-          g.addColorStop(0, `hsla(${s.hue}, 80%, 92%, ${a})`);
-          g.addColorStop(1, `hsla(${s.hue}, 80%, 92%, 0)`);
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, s.r * 4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = `hsla(${s.hue}, 70%, 95%, ${a})`;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      if (!reduce) raf = requestAnimationFrame(draw);
-    };
-
-    build();
-    raf = requestAnimationFrame(draw);
-    const onResize = () => build();
-    window.addEventListener("resize", onResize);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", onResize);
     };
   }, []);
 
@@ -255,20 +203,20 @@ export function LandingHero({ onEnter }: Props) {
       tabIndex={0}
       aria-label="Enter Zenith"
     >
-      <canvas ref={canvasRef} className="landing__sky" aria-hidden />
-      {!lowPower && (
-        <div
-          id="landing-aladin"
-          className={`landing__aladin ${aladinReady ? "is-ready" : ""}`}
-          aria-hidden
-        />
-      )}
+      <div
+        id="aladin-bg"
+        className={`landing__aladin ${aladinReady ? "is-ready" : ""}`}
+        aria-hidden
+      />
 
       <div className="landing__tint" aria-hidden />
       <div className="landing__fade" aria-hidden />
 
       <div className="landing__content">
-        <div className="landing__eyebrow">Observation Planner</div>
+        <div className="landing__eyebrow">
+          <span className={`landing__dot ${aladinReady ? "is-live" : ""}`} aria-hidden />
+          <span id="location-label">{locationLabel}</span>
+        </div>
         <h1 className="landing__brand">Zenith</h1>
       </div>
 

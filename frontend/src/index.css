@@ -1182,14 +1182,19 @@ hr {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: rgba(4, 6, 14, 0.45);
+  background: rgba(4, 6, 14, 0.38);
   pointer-events: none;
 }
 .landing__fade {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(to top, rgba(4, 6, 14, 0.95) 0%, transparent 60%);
+  background: linear-gradient(
+    to top,
+    rgba(4, 6, 14, 0.92) 0%,
+    rgba(4, 6, 14, 0.1) 55%,
+    transparent 75%
+  );
   pointer-events: none;
 }
 
@@ -1211,11 +1216,30 @@ hr {
 }
 
 .landing__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.34em;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   color: var(--text-dim);
+}
+.landing__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+.landing__dot.is-live {
+  background: var(--good);
+  box-shadow: 0 0 8px var(--good);
+  animation: landing-pulse 2.4s ease-in-out infinite;
+}
+@keyframes landing-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 .landing__brand {
   font-family: var(--font-heading);
