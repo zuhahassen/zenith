@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Crosshair } from "lucide-react";
 import { estimateBortle } from "../lib/lightPollution";
 import type { ZenithSettings } from "../lib/settings";
@@ -10,6 +10,14 @@ const SKY_LEVELS: { label: string; bortle: number }[] = [
   { label: "Suburban", bortle: 6 },
   { label: "Rural", bortle: 4 },
   { label: "Dark", bortle: 2 },
+];
+const PIPELINE_STAGES = [
+  "Resolving location…",
+  "Computing darkness window…",
+  "Querying SIMBAD catalog…",
+  "Scoring target visibility…",
+  "Predicting seeing…",
+  "Finalizing your plan…",
 ];
 
 interface GeoResult {
@@ -39,6 +47,16 @@ export function SetupForm({ settings, loading, onSubmit }: Props) {
   const [focal, setFocal] = useState(settings.focal_length_mm);
   const [sensorW, setSensorW] = useState(settings.sensor_width_mm);
   const [sensorH, setSensorH] = useState(settings.sensor_height_mm);
+
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!loading) {
+      setElapsed(0);
+      return;
+    }
+    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [loading]);
 
   const estBortle = coords ? estimateBortle(coords.lat, coords.lon) : null;
   const fovDeg = focal > 0 ? ((sensorW / focal) * (180 / Math.PI)).toFixed(1) : "—";
@@ -227,14 +245,25 @@ export function SetupForm({ settings, loading, onSubmit }: Props) {
           </details>
         )}
 
-        <button
-          type="submit"
-          className={`primary obslog__submit ${loading ? "btn-loading" : ""}`}
-          disabled={!coords || loading}
-          aria-label={loading ? "Planning your session" : undefined}
-        >
-          Plan Tonight's Session →
-        </button>
+        {loading ? (
+          <div className="obslog__loading">
+            <button
+              type="submit"
+              className="primary obslog__submit btn-loading"
+              disabled
+              aria-label="Planning your session"
+            >
+              Plan Tonight's Session →
+            </button>
+            <div className="progress-status mono">
+              {PIPELINE_STAGES[Math.min(elapsed, PIPELINE_STAGES.length - 1)]} · {elapsed}s
+            </div>
+          </div>
+        ) : (
+          <button type="submit" className="primary obslog__submit" disabled={!coords}>
+            Plan Tonight's Session →
+          </button>
+        )}
       </form>
     </div>
   );
