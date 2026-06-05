@@ -1182,9 +1182,12 @@ hr {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: rgba(4, 6, 14, 0.38);
+  background: rgba(4, 6, 14, 0.4);
   pointer-events: none;
+  transition: background 1.2s ease;
 }
+.landing__tint.is-night { background: rgba(4, 6, 14, 0.32); }
+.landing__tint.is-day { background: rgba(4, 6, 14, 0.42); }
 .landing__fade {
   position: absolute;
   inset: 0;
@@ -1235,11 +1238,11 @@ hr {
 .landing__dot.is-live {
   background: var(--good);
   box-shadow: 0 0 8px var(--good);
-  animation: landing-pulse 2.4s ease-in-out infinite;
+  animation: landing-pulse 2s ease-in-out infinite;
 }
 @keyframes landing-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.3); opacity: 1; }
 }
 .landing__brand {
   font-family: var(--font-heading);
