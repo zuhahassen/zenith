@@ -1172,7 +1172,10 @@ hr {
   pointer-events: none;
   transform: scale(1.05);
   transform-origin: center center;
+  opacity: 0;
+  transition: opacity 1.4s ease;
 }
+.landing__aladin.is-ready { opacity: 1; }
 
 /* Overlays over the sky background, beneath the foreground content. */
 .landing__tint {

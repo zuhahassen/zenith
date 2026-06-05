@@ -61,9 +61,12 @@ export function LandingHero({ onEnter }: Props) {
   const touchStartY = useRef<number | null>(null);
   const dismissed = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // True only once Aladin has actually initialised, so we can fade the live sky
+  // in over the always-present canvas starfield (never a blank screen).
+  const [aladinReady, setAladinReady] = useState(false);
 
-  // On phones or low-core devices the live Aladin survey is too heavy, so fall
-  // back to the lightweight canvas starfield.
+  // On phones or low-core devices the live Aladin survey is too heavy, so we
+  // skip it entirely and let the lightweight canvas starfield carry the scene.
   const [lowPower] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -99,6 +102,7 @@ export function LandingHero({ onEnter }: Props) {
             cooFrame: "equatorial",
             backgroundColor: "#04060e",
           });
+          setAladinReady(true);
           let i = 0;
           timer = window.setInterval(() => {
             i = (i + 1) % SKY_TOUR.length;
@@ -120,10 +124,10 @@ export function LandingHero({ onEnter }: Props) {
     };
   }, [lowPower]);
 
-  // Realistic starfield fallback: many faint stars, a few bright ones, plus a
-  // diagonal Milky Way band. Drawn on a canvas and twinkled with rAF.
+  // Realistic starfield base layer: many faint stars, a few bright ones, plus a
+  // diagonal Milky Way band. Always drawn so the landing is never blank; the
+  // Aladin survey fades in on top of it when/if it initialises.
   useEffect(() => {
-    if (!lowPower) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -212,7 +216,7 @@ export function LandingHero({ onEnter }: Props) {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
     };
-  }, [lowPower]);
+  }, []);
 
   const dismiss = useCallback(() => {
     if (dismissed.current) return;
@@ -251,10 +255,13 @@ export function LandingHero({ onEnter }: Props) {
       tabIndex={0}
       aria-label="Enter Zenith"
     >
-      {lowPower ? (
-        <canvas ref={canvasRef} className="landing__sky" aria-hidden />
-      ) : (
-        <div id="landing-aladin" className="landing__aladin" aria-hidden />
+      <canvas ref={canvasRef} className="landing__sky" aria-hidden />
+      {!lowPower && (
+        <div
+          id="landing-aladin"
+          className={`landing__aladin ${aladinReady ? "is-ready" : ""}`}
+          aria-hidden
+        />
       )}
 
       <div className="landing__tint" aria-hidden />
