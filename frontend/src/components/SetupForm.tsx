@@ -247,9 +247,14 @@ export function SetupForm({ settings, loading, onSubmit }: Props) {
 
         {loading ? (
           <div className="obslog__loading">
-            <div className="progress-bar">
-              <div className="progress-bar__sweep" />
-            </div>
+            <button
+              type="submit"
+              className="primary obslog__submit btn-loading"
+              disabled
+              aria-label="Planning your session"
+            >
+              Plan Tonight's Session →
+            </button>
             <div className="progress-status mono">
               {PIPELINE_STAGES[Math.min(elapsed, PIPELINE_STAGES.length - 1)]} · {elapsed}s
             </div>

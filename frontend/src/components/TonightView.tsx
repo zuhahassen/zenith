@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from "react";
 import { SeeingStrip } from "./SeeingStrip";
 import { TargetTable } from "./TargetTable";
 import { durationLabel, hhmm, tzLabel } from "../lib/format";
+import { getTargetImage } from "../lib/targetImage";
 import type { PlanResponse, ScoredTarget } from "../types/zenith";
 
 const Timeline = lazy(() =>
@@ -15,18 +16,19 @@ interface Props {
 }
 
 export function TonightView({ data, selectedName, onSelect }: Props) {
-  // Warm the browser image cache for the top targets so their reference photos
-  // are already decoded by the time the observer opens a detail card.
+  // Warm the reference-image cache for the top targets via the waterfall so
+  // their photos are already resolved + decoded when a detail card opens.
   useEffect(() => {
-    const ordered = data.ai_plan?.ordered_targets ?? [];
-    ordered.slice(0, 5).forEach((t) => {
-      const url = t.reference_image?.url;
-      if (url) {
-        const img = new Image();
-        img.src = url;
-      }
+    data.targets.slice(0, 5).forEach((t) => {
+      if (!Number.isFinite(t.ra_deg) || !Number.isFinite(t.dec_deg)) return;
+      getTargetImage(t.ra_deg, t.dec_deg, t.name)
+        .then((img) => {
+          const pre = new Image();
+          pre.src = img.url;
+        })
+        .catch(() => {});
     });
-  }, [data.ai_plan]);
+  }, [data.targets]);
 
   const seeingVals = data.seeing_forecast
     .map((s) => s.predicted_seeing_arcsec)

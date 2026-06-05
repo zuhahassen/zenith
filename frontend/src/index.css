@@ -457,8 +457,41 @@ hr {
 /* submit + loading */
 .obslog__submit { width: 100%; height: 40px; font-size: 14px; margin-top: 6px; }
 .obslog__loading { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
-.obslog__loading .progress-bar { width: 100%; height: 3px; }
 .obslog__loading .progress-status { color: var(--text-dim); font-size: 12px; }
+
+/* In-button scanning line: keeps the button footprint, hides the label, and
+   sweeps a bright dot left↔right while the plan is generated. */
+.btn-loading {
+  position: relative;
+  overflow: hidden;
+  color: transparent;
+}
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-50%);
+}
+.btn-loading::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -30%;
+  width: 30%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, #fff, transparent);
+  transform: translateY(-50%);
+  animation: scan 1.4s ease-in-out infinite alternate;
+  z-index: 1;
+}
+@keyframes scan {
+  from { left: -30%; }
+  to { left: 100%; }
+}
 
 /* ==========================================================================
    Settings form (shared compact fieldset layout)
@@ -713,7 +746,49 @@ hr {
   overflow: hidden;
 }
 .tdetail__img img { width: 100%; height: 100%; display: block; object-fit: cover; }
-.tdetail__imgsrc { margin-top: 6px; color: var(--text-faint); }
+
+/* Credit strip beneath the reference image: source pill + attribution. */
+.img-credit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  margin-top: 6px;
+}
+.img-credit__badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.img-credit__badge--lco { color: #e0a458; }       /* amber — Las Cumbres */
+.img-credit__badge--astropix { color: #6b9fd4; }  /* blue — Hubble/JWST */
+.img-credit__badge--apod { color: #e0816b; }      /* coral — NASA APOD */
+.img-credit__badge--dss2 { color: var(--text-dim); } /* gray — survey */
+.img-credit__text {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Type-aware placeholder when a target has no coordinates / fetchable image. */
+.tdetail__typeph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--bg);
+}
+.tdetail__typeph-text { color: var(--text-faint); font-size: 12px; }
 .tdetail__img-ph {
   margin: 14px; height: 140px;
   border: 1px dashed var(--border); background: var(--bg);
