@@ -1243,6 +1243,18 @@ hr {
 }
 .landing__aladin.is-ready { opacity: 1; }
 
+/* Belt-and-suspenders: hide any Aladin coordinate readout / grid / status
+   overlay so no lat/long markers appear over the landing background. */
+.landing__aladin .aladin-location,
+.landing__aladin .aladin-cooFrame,
+.landing__aladin .aladin-coordinatesDisplay,
+.landing__aladin .aladin-status-bar,
+.landing__aladin .aladin-statusBar,
+.landing__aladin .aladin-fov,
+.landing__aladin .aladin-reticleCanvas {
+  display: none !important;
+}
+
 /* Overlays over the sky background, beneath the foreground content. */
 .landing__tint {
   position: absolute;
