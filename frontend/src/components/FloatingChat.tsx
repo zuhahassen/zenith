@@ -6,11 +6,18 @@ import type { ChatMessage } from "../types/zenith";
 const EMPTY_HINT =
   "Ask me anything — what's Bortle 4? Which targets are best tonight? How do I find M 13?";
 
+interface Props {
+  // The current session's plan context, when a plan exists. Passed through to
+  // /api/explain so the assistant can answer about tonight's targets; falls
+  // back to an empty object for general astronomy questions.
+  planContext?: Record<string, unknown>;
+}
+
 // Global "Ask about the sky" assistant. Reuses the backend /api/explain proxy
-// (via useExplainer) so the Anthropic key stays server-side; the question and
-// running history are sent with an empty plan_context since this chat is not
-// scoped to a single plan.
-export function FloatingChat() {
+// (via useExplainer) so the Anthropic key stays server-side. When a plan has
+// been generated it forwards that plan context so answers are grounded in
+// tonight's session; otherwise it answers general astronomy questions.
+export function FloatingChat({ planContext }: Props) {
   const [open, setOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
   const [draft, setDraft] = useState("");
@@ -35,7 +42,7 @@ export function FloatingChat() {
     setMessages((m) => [...m, { role: "user", content: question }]);
     setDraft("");
     explainer
-      .mutateAsync({ question, plan_context: {}, history })
+      .mutateAsync({ question, plan_context: planContext ?? {}, history })
       .then((res) => setMessages((m) => [...m, { role: "assistant", content: res.answer }]))
       .catch((err) =>
         setMessages((m) => [

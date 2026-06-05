@@ -307,7 +307,7 @@ export default function App() {
         )}
       </div>
 
-      <FloatingChat />
+      <FloatingChat planContext={data ? planContextFor(data) : undefined} />
 
       {showLanding && <LandingHero onEnter={enterApp} />}
     </div>
