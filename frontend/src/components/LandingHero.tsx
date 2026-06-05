@@ -5,10 +5,13 @@ interface Props {
   onEnter: () => void;
 }
 
-const ALADIN_JS = "https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js";
-const ALADIN_CSS = "https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.min.css";
+// Aladin Lite v3 ESM build on jsdelivr. We load it from a CDN (not the CDS
+// AladinLite host, which is frequently unreachable) via dynamic import; the
+// HiPS tiles themselves still come from CDS/alasky at runtime. v3 bundles its
+// own CSS, so no separate stylesheet is needed.
+const ALADIN_ESM = "https://cdn.jsdelivr.net/npm/aladin-lite@3/dist/aladin.js";
 
-// Curated showpieces for the daytime / no-geolocation "beauty reel".
+// Curated showpieces for the "beauty reel".
 const HERO_TARGETS = [
   { name: "Milky Way core", ra: 266.4, dec: -29.0, fov: 80 },
   { name: "Orion Nebula", ra: 83.8, dec: -5.4, fov: 15 },
@@ -17,36 +20,25 @@ const HERO_TARGETS = [
   { name: "Lagoon Nebula", ra: 270.9, dec: -24.4, fov: 10 },
 ];
 
-/** Ensure the Aladin Lite stylesheet is present (required for correct rendering). */
-function ensureAladinCss() {
-  if (document.getElementById("aladin-lite-css")) return;
-  const link = document.createElement("link");
-  link.id = "aladin-lite-css";
-  link.rel = "stylesheet";
-  link.href = ALADIN_CSS;
-  document.head.appendChild(link);
-}
+let aladinPromise: Promise<any> | null = null;
 
-/** Inject the Aladin Lite script + CSS once and resolve when its global is ready. */
+/** Dynamically import the Aladin Lite ESM once and resolve its default export. */
 function loadAladin(): Promise<any> {
-  ensureAladinCss();
   const w = window as any;
   if (w.A) return Promise.resolve(w.A);
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById("aladin-lite-script") as HTMLScriptElement | null;
-    if (existing) {
-      existing.addEventListener("load", () => resolve(w.A));
-      existing.addEventListener("error", reject);
-      return;
-    }
-    const s = document.createElement("script");
-    s.id = "aladin-lite-script";
-    s.src = ALADIN_JS;
-    s.charset = "utf-8";
-    s.onload = () => resolve(w.A);
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
+  if (!aladinPromise) {
+    aladinPromise = import(/* @vite-ignore */ ALADIN_ESM)
+      .then((mod) => {
+        const A = mod?.default ?? mod;
+        w.A = A;
+        return A;
+      })
+      .catch((err) => {
+        aladinPromise = null; // allow a retry on next mount
+        throw err;
+      });
+  }
+  return aladinPromise;
 }
 
 /**

@@ -249,12 +249,15 @@ export function SetupForm({ settings, loading, onSubmit }: Props) {
           <div className="obslog__loading">
             <button
               type="submit"
-              className="primary obslog__submit btn-loading"
+              className="primary obslog__submit"
               disabled
               aria-label="Planning your session"
             >
               Plan Tonight's Session →
             </button>
+            <div className="scan-line" aria-hidden>
+              <span />
+            </div>
             <div className="progress-status mono">
               {PIPELINE_STAGES[Math.min(elapsed, PIPELINE_STAGES.length - 1)]} · {elapsed}s
             </div>
