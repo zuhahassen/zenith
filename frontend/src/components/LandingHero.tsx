@@ -131,19 +131,29 @@ export function LandingHero({ onEnter }: Props) {
       }
     };
 
-    // Gentle parallax: nudge RA by 0.003°/100ms around the current target.
+    // Gentle parallax. Slow + infrequent so Aladin's progressive HiPS tiles have
+    // time to refine to full resolution between nudges (continuous panning keeps
+    // the view coarse/pixelated).
     const startDrift = (ra: number, dec: number) => {
       window.clearInterval(driftTimer);
       let d = 0;
       driftTimer = window.setInterval(() => {
         if (!aladin) return;
-        d += 0.003;
+        d += 0.0015;
         try {
           aladin.gotoRaDec(ra + d, dec);
         } catch {
           /* ignore */
         }
-      }, 100);
+      }, 250);
+    };
+
+    // Hold still after arriving so tiles sharpen, then begin the slow drift.
+    const settleThenDrift = (ra: number, dec: number) => {
+      window.clearTimeout(flyTimer);
+      flyTimer = window.setTimeout(() => {
+        if (!cancelled) startDrift(ra, dec);
+      }, 3500);
     };
 
     const stopReel = () => {
@@ -153,7 +163,7 @@ export function LandingHero({ onEnter }: Props) {
       reelTimer = driftTimer = flyTimer = 0;
     };
 
-    // Cycle the curated showpieces every 8s: 2s fly-in, then drift.
+    // Cycle the curated showpieces every 14s: 2s fly-in, settle, then slow drift.
     const runReel = () => {
       let i = 0;
       const show = (idx: number) => {
@@ -165,17 +175,14 @@ export function LandingHero({ onEnter }: Props) {
         } catch {
           /* ignore */
         }
-        window.clearTimeout(flyTimer);
-        flyTimer = window.setTimeout(() => {
-          if (!cancelled) startDrift(t.ra, t.dec);
-        }, 2100);
+        settleThenDrift(t.ra, t.dec);
       };
       show(0);
       reelTimer = window.setInterval(() => {
         i = (i + 1) % HERO_TARGETS.length;
         window.clearInterval(driftTimer);
         show(i);
-      }, 8000);
+      }, 14000);
     };
 
     const goNight = (lat: number, lon: number, city: string) => {
@@ -188,7 +195,7 @@ export function LandingHero({ onEnter }: Props) {
       } catch {
         /* ignore */
       }
-      startDrift(ra, dec);
+      settleThenDrift(ra, dec);
       setNightMode(true);
       const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       setLocationLabel(`Live sky · ${city} · ${time}`);
