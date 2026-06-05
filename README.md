@@ -122,7 +122,8 @@ constant so the pipeline degrades gracefully.
   `/api/calendar.ics` serves the same data as a subscribable iCalendar feed;
   `/api/feedback`, `/api/community-favorites`, and `/api/history` persist and
   surface per-user ratings, crowd-sourced target quality, and past sessions
-  through the Worker's D1 store.
+  through the Worker's D1 store; `/api/featured-images` returns a curated
+  gallery of iconic deep-sky objects for the landing backdrop.
 
 Production runs on Cloudflare's edge plus a DigitalOcean droplet:
 
@@ -133,6 +134,14 @@ Production runs on Cloudflare's edge plus a DigitalOcean droplet:
 - **DigitalOcean droplet** runs `uvicorn` behind nginx.
 
 ## Frontend interface
+
+A full-screen **landing overlay** greets every visit: an Aladin Lite sky
+(loaded on demand from a CDN as an ES module) continuously pans through a
+curated "beauty reel" of showpiece deep-sky objects, with the coordinate grid
+and status overlays suppressed for a clean backdrop. It settles on each target
+before a slow drift so the progressive HiPS tiles resolve to full resolution,
+and is dismissed by swiping up, scrolling, tapping, or a key press to reveal
+the workspace.
 
 The React app is a single persistent three-panel workspace styled after
 professional observatory software (dense data tables, 1px rules, monospaced
@@ -159,10 +168,21 @@ are bundled locally via `@fontsource` rather than a CDN:
   assistant is available globally and routes through the same `/api/explain`
   proxy (no API key in the browser).
 
+Reference images are resolved by a client-side **priority waterfall**
+(`frontend/src/lib/targetImage.ts`): it races Las Cumbres Observatory archive
+frames, AstroPix press releases, and a name-matched NASA APOD, taking the
+fastest source that actually decodes as a raster image, and falls back to a
+CORS-safe DSS2 survey cutout (Aladin `hips2fits`) so every target with
+coordinates always gets a photo. Results are cached per `ra,dec`, the detail
+panel shows a skeleton loader and a source-tagged credit strip, and a type-based
+SVG placeholder covers targets with no coordinates.
+
 Returning observers' equipment and site defaults persist to `localStorage` and
 pre-fill the setup form, including a UTC/local time-display preference honoured
 by every timestamp in the UI. Reference images are preloaded for the top
-targets so they are ready before a card is opened.
+targets so they are ready before a card is opened, and the "Plan Tonight's
+Session" button shows a scanning-line animation with a live status read-out
+while the plan is generated.
 
 ## Stack
 
@@ -342,7 +362,8 @@ zenith/
 | Site comparison               | Implemented | `/api/compare-sites`, weighted composite over 2–5 sites      |
 | Session history               | Implemented | Plans summarised to D1, browsable in the History view (side-panel detail) |
 | Edge (Workers/Pages/KV/D1)    | Deployed    | Proxy, cache, rating/history storage                         |
-| Reference imagery (MAST)      | Implemented | HLA HST cutout with SkyView DSS2 fallback, LRU-cached        |
+| Reference imagery (waterfall) | Implemented | Client-side LCO → AstroPix → APOD race with DSS2 (`hips2fits`) fallback, cached per `ra,dec` |
+| Landing overlay               | Implemented | Aladin Lite beauty-reel backdrop, `/api/featured-images`, swipe/scroll/tap to dismiss |
 | Smoke test                    | Implemented | `scripts/smoke_test.py` covers every endpoint, CI exit codes |
 | Multi-night target calendar   | Implemented | KV-cached forward scan, quality-coded cells, deep-linked from a target |
 | Calendar export / subscribe   | Implemented | `.ics` download (UTC or local tz), subscribable `webcal://` feed (`/api/calendar.ics`), per-night Add-to-Google-Calendar link |
@@ -360,3 +381,8 @@ zenith/
 - [Astroquery](https://astroquery.readthedocs.io/) — live latitude-filtered TAP queries to CDS SIMBAD.
 - [Open-Meteo](https://open-meteo.com/) — hourly surface + multi-level pressure weather at runtime.
 - [ECMWF ERA5](https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5) — reanalysis profiles for offline multi-site training.
+
+## Use of AI tools
+
+- **Windsurf (Cascade)**: helped build the frontend, API calls, FASTAPI endpoints, and Cloudflare edge layer.
+- **Claude Code**: mostly for debugging and harvesting data (ERA5 harvest scripts)
