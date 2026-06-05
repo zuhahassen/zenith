@@ -49,70 +49,23 @@ function loadAladin(): Promise<any> {
   });
 }
 
-/** RA/Dec (degrees) pointing at the observer's local zenith, from sidereal time. */
-function zenithRaDec(lat: number, lon: number): [number, number] {
-  const now = new Date();
-  const utcH = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
-  const J2000 = Date.now() / 86400000 - 10957.5;
-  const GST = (6.697375 + 0.0657098242 * J2000 + utcH * 1.00273791) % 24;
-  const LST = (((GST + lon / 15) % 24) + 24) % 24; // local sidereal time, hours
-  return [LST * 15, lat];
-}
-
-/** Sun altitude (degrees) at a given instant and location (low-precision). */
-function sunAltitudeAt(date: Date, lat: number, lon: number): number {
-  const utcH = date.getUTCHours() + date.getUTCMinutes() / 60;
-  const dayOfYear = Math.floor(
-    (date.getTime() - Date.UTC(date.getUTCFullYear(), 0, 0)) / 86400000,
-  );
-  const declination = -23.45 * Math.cos(((360 / 365) * (dayOfYear + 10) * Math.PI) / 180);
-  const hourAngle = (utcH - 12 + lon / 15) * 15;
-  const latR = (lat * Math.PI) / 180;
-  const decR = (declination * Math.PI) / 180;
-  const haR = (hourAngle * Math.PI) / 180;
-  return (
-    (Math.asin(
-      Math.sin(latR) * Math.sin(decR) + Math.cos(latR) * Math.cos(decR) * Math.cos(haR),
-    ) *
-      180) /
-    Math.PI
-  );
-}
-
-/** Next local time (e.g. "9:14 PM") the sun drops below -12°, or null. */
-function nightStartTime(lat: number, lon: number): string | null {
-  const now = new Date();
-  let prev = sunAltitudeAt(now, lat, lon);
-  for (let m = 5; m <= 24 * 60; m += 5) {
-    const d = new Date(now.getTime() + m * 60000);
-    const alt = sunAltitudeAt(d, lat, lon);
-    if (prev >= -12 && alt < -12) {
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    }
-    prev = alt;
-  }
-  return null;
-}
-
 /**
- * Landing shown on every load with a time-aware Aladin Lite sky: at
- * astronomical night it points at the observer's zenith (geolocation +
- * sidereal time) for the real local sky; by day/twilight or without
- * geolocation it runs a curated "beauty reel" of showpiece deep-sky objects.
- * Dismissed by swiping up, scrolling, a tap, or a key press.
+ * Landing shown on every load with an Aladin Lite sky that continuously
+ * iterates through a curated "beauty reel" of showpiece deep-sky objects
+ * (no geolocation / live local sky). Dismissed by swiping up, scrolling, a
+ * tap, or a key press.
  */
 export function LandingHero({ onEnter }: Props) {
   const [exiting, setExiting] = useState(false);
   const touchStartY = useRef<number | null>(null);
   const dismissed = useRef(false);
-  // Fade the live sky in once Aladin has initialised (avoids a flash of empty).
+  // Fade the sky in once Aladin has initialised (avoids a flash of empty).
   const [aladinReady, setAladinReady] = useState(false);
-  const [locationLabel, setLocationLabel] = useState("Locating sky…");
-  // night = real local sky (live); otherwise the daytime beauty reel.
-  const [nightMode, setNightMode] = useState(false);
+  // Eyebrow label tracks the currently featured showpiece.
+  const [locationLabel, setLocationLabel] = useState("Tonight's sky");
 
-  // Aladin Lite sky background. Loads script + CSS, then either points at the
-  // observer's zenith (astronomical night) or runs a curated beauty reel.
+  // Aladin Lite sky background. Loads script + CSS, then runs the curated
+  // beauty reel, cycling through showpiece deep-sky objects.
   useEffect(() => {
     let cancelled = false;
     let aladin: any;
@@ -175,6 +128,7 @@ export function LandingHero({ onEnter }: Props) {
         } catch {
           /* ignore */
         }
+        setLocationLabel(t.name);
         settleThenDrift(t.ra, t.dec);
       };
       show(0);
@@ -183,30 +137,6 @@ export function LandingHero({ onEnter }: Props) {
         window.clearInterval(driftTimer);
         show(i);
       }, 14000);
-    };
-
-    const goNight = (lat: number, lon: number, city: string) => {
-      stopReel();
-      setSurvey("P/DSS2/color");
-      const [ra, dec] = zenithRaDec(lat, lon);
-      try {
-        aladin.gotoRaDec(ra, dec);
-        aladin.setFov(110);
-      } catch {
-        /* ignore */
-      }
-      settleThenDrift(ra, dec);
-      setNightMode(true);
-      const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-      setLocationLabel(`Live sky · ${city} · ${time}`);
-    };
-
-    const goDay = (lat: number, lon: number, city: string) => {
-      setNightMode(false); // reel keeps running
-      const ns = nightStartTime(lat, lon);
-      setLocationLabel(
-        ns ? `Tonight's sky · ${city} · night begins ~${ns}` : `Tonight's sky · ${city}`,
-      );
     };
 
     loadAladin()
@@ -232,36 +162,8 @@ export function LandingHero({ onEnter }: Props) {
           });
           setAladinReady(true);
 
-          // Start the reel immediately while geolocation resolves.
+          // Continuously cycle through the curated showpieces.
           runReel();
-
-          if (!navigator.geolocation) {
-            setNightMode(false);
-            setLocationLabel("Tonight's sky · Milky Way core");
-            return;
-          }
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              if (cancelled) return;
-              const { latitude: lat, longitude: lon } = pos.coords;
-              fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`)
-                .then((r) => r.json())
-                .then((d) => d.address ?? {})
-                .catch(() => ({}))
-                .then((a: any) => {
-                  if (cancelled) return;
-                  const city = a.city || a.town || a.village || a.county || "your location";
-                  if (sunAltitudeAt(new Date(), lat, lon) < -12) goNight(lat, lon, city);
-                  else goDay(lat, lon, city);
-                });
-            },
-            () => {
-              if (cancelled) return;
-              setNightMode(false);
-              setLocationLabel("Tonight's sky · Milky Way core");
-            },
-            { timeout: 8000 },
-          );
         });
       })
       .catch(() => setLocationLabel("Night sky"));
@@ -315,12 +217,12 @@ export function LandingHero({ onEnter }: Props) {
         aria-hidden
       />
 
-      <div className={`landing__tint ${nightMode ? "is-night" : "is-day"}`} aria-hidden />
+      <div className="landing__tint is-day" aria-hidden />
       <div className="landing__fade" aria-hidden />
 
       <div className="landing__content">
         <div className="landing__eyebrow">
-          <span className={`landing__dot ${nightMode ? "is-live" : ""}`} aria-hidden />
+          <span className="landing__dot" aria-hidden />
           <span id="location-label">{locationLabel}</span>
         </div>
         <h1 className="landing__brand">Zenith</h1>
